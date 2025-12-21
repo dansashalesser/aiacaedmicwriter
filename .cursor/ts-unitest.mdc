@@ -1,0 +1,754 @@
+<mdc name="cursor-testing-strategy" version="2.0">
+
+  <title>
+    Testing Strategy for Next.js + Supabase + TypeScript Project
+  </title>
+
+  <audience>
+    Engineers using Cursor on a Next.js + Supabase + TypeScript codebase who want a clear, maintainable, and CI-ready testing strategy. Focuses on practical testing patterns for modern web applications with database integration.
+  </audience>
+
+  <executive_verdict>
+    Use TypeScript (Vitest) for all unit, component, and integration tests. Mock Supabase at I/O boundaries; use a real Supabase instance only in targeted integration tests. Use Python only for specialized black-box/E2E scenarios that truly benefit from it. Keep the stack lean and aligned with your runtime.
+  </executive_verdict>
+
+  <pros_cons_neutral>
+    <pros>
+      <item>Single-language test stack (TS) reduces cognitive load and CI complexity.</item>
+      <item>Vitest + Testing Library are fast and first-class for React/Next.</item>
+      <item>Supabase client testing patterns are well-known; local Supabase enables realistic integration tests.</item>
+    </pros>
+    <cons>
+      <item>Data-heavy property tests may be simpler in Python, but that adds a second toolchain.</item>
+      <item>End-to-end browser tests still need Playwright (TS or Python) if required.</item>
+      <item>Edge Functions (Deno) require dedicated Deno test runner and CI setup.</item>
+    </cons>
+    <neutral>
+      <item>Start with TS-only; add Python black-box tests only for clear wins (e.g., cross-service contracts).</item>
+      <item>Use local Supabase for selective integration tests; keep most tests hermetic with mocks.</item>
+      <item>Edge Functions can be tested via Deno or via client invocation (Supabase functions API).</item>
+    </neutral>
+  </pros_cons_neutral>
+
+  <recommended_layout>
+    <![CDATA[
+    repo/
+    ├── app/                          # Next.js App Router
+    ├── components/                   # React components
+    ├── lib/                          # Utilities, Supabase client wrappers, server actions
+    ├── tests/                        # TS tests
+    │   ├── components/               # Component tests
+    │   ├── lib/                      # Unit/integration tests
+    │   ├── api/                      # Route handler tests (App Router)
+    │   ├── middleware/               # Middleware tests
+    │   ├── msw/                      # MSW handlers & server setup
+    │   └── __mocks__/                # Additional test doubles
+    ├── supabase/
+    │   ├── functions/                # Edge Functions (Deno)
+    │   │   └── tests/                # Deno tests for Edge Functions
+    │   └── config.toml               # Supabase config
+    ├── package.json                  # scripts: build, test, coverage
+    ├── vitest.config.ts              # Vitest config (coverage thresholds)
+    ├── next.config.mjs               # Next.js config
+    ├── tsconfig.json                 # TS compiler options
+    └── .github/workflows/ci.yml      # CI: Node tests + optional Edge Function tests
+    ]]>
+  </recommended_layout>
+
+  <conventions>
+    <naming>
+      <item>Unit tests: <code>tests/**/*.test.ts</code></item>
+      <item>Component tests: <code>tests/components/*.test.tsx</code></item>
+      <item>API (App Router) tests: <code>tests/api/*.test.ts</code></item>
+      <item>Middleware tests: <code>tests/middleware/*.test.ts</code></item>
+      <item>Edge Function tests: <code>supabase/functions/tests/*-test.ts</code></item>
+    </naming>
+    <principles>
+      <item>One behavior per test; names read like specifications.</item>
+      <item>Mock only at I/O boundaries (Supabase, network, time, RNG, filesystem).</item>
+      <item>Prefer pure functions for business logic; thin wrappers for server actions/handlers.</item>
+      <item>Deterministic tests: seeded RNG, fake timers, isolated data.</item>
+      <item>Realistic coverage floors; prioritize critical business logic and auth paths.</item>
+    </principles>
+  </conventions>
+
+  <testing_guidelines>
+    <unit_testing>
+      <structure>
+        <item>Pattern: <code>describe('fn', () =&gt; { it('does X when Y', () =&gt; { ... }) })</code></item>
+        <item>Cover happy path, validation failures, boundary cases.</item>
+        <item>Mock external calls (Supabase, fetch, email) with MSW or <code>vi.fn()</code>.</item>
+        <item>Assert outputs/observable behavior—not private implementation details.</item>
+      </structure>
+      <examples>
+        <item>Utilities: input validation, formatting, error propagation.</item>
+        <item>Domain logic: branch coverage, side-effect boundaries, idempotency.</item>
+        <item>Transformations: input/output tables and edge cases.</item>
+      </examples>
+    </unit_testing>
+
+    <component_testing>
+      <structure>
+        <item>Environment: <code>jsdom</code> + Testing Library.</item>
+        <item>Test rendering, user interactions, props/state transitions, error states.</item>
+        <item>Mock: auth context, Supabase client, Next router, network (via MSW).</item>
+        <item>Accessibility: roles, labels, keyboard nav.</item>
+      </structure>
+      <examples>
+        <item>Forms: validation messages, submission, disabled/enabled states.</item>
+        <item>Lists: filtering, sorting, empty/error states.</item>
+        <item>Modals: open/close, escape/backdrop behavior.</item>
+        <item>Auth UI: protected content gating by role.</item>
+      </examples>
+    </component_testing>
+
+    <api_testing>
+      <structure>
+        <item>App Router route handlers export <code>GET/POST/PUT/DELETE</code> functions taking a <code>Request</code> and returning a <code>Response</code>.</item>
+        <item>Call them directly with <code>new Request(url, { method, body, headers })</code>.</item>
+        <item>Mock Supabase server client; test status codes + JSON structure.</item>
+      </structure>
+      <examples>
+        <item>Data endpoints: query params, pagination, filtering.</item>
+        <item>Auth endpoints: tokens, permissions, 401/403/404 branches.</item>
+        <item>CRUD: validation, conflicts, idempotency.</item>
+      </examples>
+    </api_testing>
+
+    <supabase_testing>
+      <database_tests>
+        <item>Default to mocks for unit tests; use <b>local Supabase</b> only for targeted integration tests.</item>
+        <item>In integration tests, use the anon key to test RLS user behavior; use service role only when explicitly needed.</item>
+        <item>Clean test data with <code>afterEach</code> and unique IDs; wrap writes in try/finally.</item>
+        <item>Assert RLS policy effects by switching auth context (anon vs authenticated user with role).</item>
+      </database_tests>
+      <edge_functions>
+        <item>Test via Deno or via <code>supabase.functions.invoke</code> against local Supabase.</item>
+        <item>Validate input, success path, and error handling.</item>
+        <item>Mock external services (HTTP) with MSW or Deno std/mock.</item>
+      </edge_functions>
+    </supabase_testing>
+
+    <mocking_strategy>
+      <what_to_mock>
+        <item>Supabase client calls (auth, from, storage).</item>
+        <item>External HTTP (OpenAI, email, payments).</item>
+        <item>Time (<code>Date.now</code>, timers), RNG, and filesystem.</item>
+        <item>Next router/navigation where needed.</item>
+      </what_to_mock>
+      <what_not_to_mock>
+        <item>Pure utilities and data transforms.</item>
+        <item>Most business rules—extract to pure functions and test directly.</item>
+      </what_not_to_mock>
+    </mocking_strategy>
+
+    <test_data_management>
+      <factories>
+        <item>Use small, realistic factories: <code>createUser()</code>, <code>createTherapist()</code>.</item>
+        <item>Override fields as needed: <code>createUser({ role: 'admin' })</code>.</item>
+        <item>Keep factories in <code>tests/__factories__/</code>.</item>
+      </factories>
+      <cleanup>
+        <item>Always clean up test data; use unique IDs to avoid collisions.</item>
+        <item>Reset mocks with <code>vi.clearAllMocks()</code> in <code>beforeEach</code>.</item>
+      </cleanup>
+    </test_data_management>
+  </testing_guidelines>
+
+  <specific_patterns>
+    <server_actions>
+      <guidelines>
+        <item>Prefer extracting core logic into pure functions; test them thoroughly.</item>
+        <item>For the server action wrapper, mock Supabase + cookies and test happy/error paths.</item>
+        <item>Mock <code>cookies()</code> from <code>next/headers</code> when needed.</item>
+      </guidelines>
+    </server_actions>
+
+    <middleware>
+      <guidelines>
+        <item>Middleware receives a <code>Request</code> and returns a <code>Response</code> or <code>NextResponse</code>.</item>
+        <item>Create minimal <code>Request</code> objects with URL/headers reflecting the case under test.</item>
+        <item>Assert redirect/next behavior via response status/headers.</item>
+      </guidelines>
+    </middleware>
+  </specific_patterns>
+
+  <node_setup>
+    <package_json>
+      <![CDATA[
+      {
+        "scripts": {
+          "build": "next build",
+          "test": "vitest run --coverage",
+          "test:watch": "vitest",
+          "test:edge": "deno test --allow-all supabase/functions/tests/",
+          "lint": "next lint",
+          "dev": "next dev",
+          "start": "next start"
+        },
+        "devDependencies": {
+          "typescript": "^5.6.0",
+          "vitest": "^2.0.0",
+          "@vitejs/plugin-react": "^4.0.0",
+          "@testing-library/react": "^14.0.0",
+          "@testing-library/jest-dom": "^6.0.0",
+          "@testing-library/user-event": "^14.0.0",
+          "jsdom": "^23.0.0",
+          "msw": "^2.0.0",
+          "cross-fetch": "^4.0.0"
+        },
+        "dependencies": {
+          "next": "^14.0.0",
+          "react": "^18.0.0",
+          "react-dom": "^18.0.0",
+          "@supabase/supabase-js": "^2.0.0"
+        }
+      }
+      ]]>
+    </package_json>
+
+    <tsconfig_json>
+      <![CDATA[
+      {
+        "compilerOptions": {
+          "target": "ES2022",
+          "lib": ["dom", "dom.iterable", "es2022"],
+          "allowJs": false,
+          "skipLibCheck": true,
+          "strict": true,
+          "noEmit": true,
+          "esModuleInterop": true,
+          "module": "esnext",
+          "moduleResolution": "bundler",
+          "resolveJsonModule": true,
+          "isolatedModules": true,
+          "jsx": "preserve",
+          "incremental": true,
+          "baseUrl": ".",
+          "paths": { "@/*": ["./*"] }
+        },
+        "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+        "exclude": ["node_modules"]
+      }
+      ]]>
+    </tsconfig_json>
+
+    <vitest_config_ts>
+      <![CDATA[
+      import { defineConfig } from 'vitest/config'
+      import react from '@vitejs/plugin-react'
+      import path from 'path'
+
+      export default defineConfig({
+        plugins: [react()],
+        test: {
+          environment: 'jsdom',
+          environmentOptions: { jsdom: { url: 'http://localhost' } },
+          globals: true,
+          include: ['tests/**/*.test.{ts,tsx}'],
+          setupFiles: ['./tests/setup.ts'],
+          reporters: ['default'],
+          hookTimeout: 10000,
+          testTimeout: 5000,
+          coverage: {
+            provider: 'v8',
+            reporter: ['text', 'lcov'],
+            lines: 80, functions: 80, branches: 75, statements: 80,
+            reportsDirectory: './coverage',
+            exclude: ['node_modules/', 'tests/', '**/*.d.ts', '**/*.config.*', '**/coverage/**']
+          }
+        },
+        resolve: { alias: { '@': path.resolve(__dirname, './') } }
+      })
+      ]]>
+    </vitest_config_ts>
+  </node_setup>
+
+  <ts_examples>
+    <test_setup file="tests/setup.ts">
+      <![CDATA[
+// tests/setup.ts — Global test setup
+import '@testing-library/jest-dom'
+import 'cross-fetch/polyfill'
+import { vi } from 'vitest'
+
+// MSW (Node) — optional but recommended for network mocking
+import { server } from './msw/server'
+beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
+afterEach(() => {
+  server.resetHandlers()
+  vi.clearAllMocks()
+})
+afterAll(() => server.close())
+
+// Mock Next.js router (minimal)
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn(), refresh: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+  usePathname: () => '/'
+}))
+
+// Partial mock of react-dom to override only useFormState (avoid clobbering other exports)
+vi.mock('react-dom', async () => {
+  const actual = await vi.importActual<typeof import('react-dom')>('react-dom')
+  return { ...actual, useFormState: vi.fn((action, initial) => [initial, vi.fn()]) }
+})
+
+// Example Supabase client mock for client-side modules (override per-test as needed)
+vi.mock('@/lib/supabase/client', () => ({
+  createClient: () => ({
+    auth: { getUser: vi.fn(), signInWithPassword: vi.fn(), signOut: vi.fn() },
+    from: vi.fn(() => ({
+      select: vi.fn().mockReturnThis(),
+      insert: vi.fn().mockReturnThis(),
+      update: vi.fn().mockReturnThis(),
+      delete: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn(),
+    })),
+  }),
+}))
+      ]]>
+    </test_setup>
+
+    <msw_server file="tests/msw/server.ts">
+      <![CDATA[
+// tests/msw/server.ts — MSW Node server
+import { setupServer } from 'msw/node'
+import { http, HttpResponse } from 'msw'
+
+// Add default handlers here; override in individual tests with server.use(...)
+export const server = setupServer(
+  // Example fallback handler
+  http.get('*/health', () => HttpResponse.json({ ok: true }, { status: 200 }))
+)
+      ]]>
+    </msw_server>
+
+    <api_test_example file="tests/api/therapists.test.ts">
+      <![CDATA[
+// tests/api/therapists.test.ts — App Router route test (no node-mocks-http)
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { GET } from '@/app/api/therapists/route'
+
+// Mock Supabase server client module used by the route
+const mockSupabase = {
+  from: vi.fn(() => ({
+    select: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
+    limit: vi.fn().mockResolvedValue({
+      data: [
+        { id: 1, name: 'Dr. Smith', specialization: 'Anxiety' },
+        { id: 2, name: 'Dr. Jones', specialization: 'Depression' },
+      ],
+      error: null,
+    }),
+  })),
+}
+
+vi.mock('@/lib/supabase/server', () => ({ createClient: () => mockSupabase }))
+
+describe('/api/therapists (App Router)', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('returns therapists list', async () => {
+    const req = new Request('http://test.local/api/therapists', { method: 'GET' })
+    const res = await GET(req)
+    expect(res.status).toBe(200)
+    const data = await res.json()
+    expect(Array.isArray(data)).toBe(true)
+    expect(data[0]).toHaveProperty('name', 'Dr. Smith')
+  })
+
+  it('handles database errors', async () => {
+    mockSupabase.from().limit.mockResolvedValueOnce({ data: null, error: { message: 'DB down' } })
+    const req = new Request('http://test.local/api/therapists', { method: 'GET' })
+    const res = await GET(req)
+    expect(res.status).toBeGreaterThanOrEqual(400)
+    const body = await res.json()
+    expect(body).toHaveProperty('error')
+  })
+})
+      ]]>
+    </api_test_example>
+
+    <middleware_test_example file="tests/middleware/auth.test.ts">
+      <![CDATA[
+// tests/middleware/auth.test.ts — Example middleware test
+import { describe, it, expect } from 'vitest'
+import middleware from '@/middleware'
+
+describe('middleware/auth', () => {
+  it('redirects unauthenticated users', async () => {
+    const req = new Request('http://test.local/protected', { headers: { cookie: '' } })
+    const res = await middleware(req)
+    // NextResponse.redirect -> status 307 and "Location" header
+    expect(res.status).toBe(307)
+    expect(res.headers.get('location')).toMatch(/\/login$/)
+  })
+})
+      ]]>
+    </middleware_test_example>
+
+    <component_test_example file="tests/components/auth/register-form.test.tsx">
+      <![CDATA[
+// tests/components/auth/register-form.test.tsx — Component test
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { RegisterForm } from '@/components/auth/register-form'
+import { signUp } from '@/lib/actions'
+
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }) }))
+vi.mock('@/lib/actions', () => ({ signUp: vi.fn() }))
+vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: vi.fn() }) }))
+
+describe('RegisterForm', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('renders required fields', () => {
+    render(<RegisterForm userType="patient" />)
+    expect(screen.getByLabelText(/first name/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/last name/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/email/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/password/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/confirm password/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /create account/i })).toBeInTheDocument()
+  })
+
+  it('validates password confirmation', async () => {
+    const user = userEvent.setup()
+    render(<RegisterForm userType="patient" />)
+    await user.type(screen.getByLabelText(/password/i), 'password123')
+    await user.type(screen.getByLabelText(/confirm password/i), 'different123')
+    await user.tab()
+    await waitFor(() => expect(screen.getByText(/passwords do not match/i)).toBeInTheDocument())
+  })
+
+  it('submits valid form', async () => {
+    const user = userEvent.setup()
+    vi.mocked(signUp).mockResolvedValue({ success: true, message: 'Success' })
+    render(<RegisterForm userType="patient" />)
+
+    await user.type(screen.getByLabelText(/first name/i), 'John')
+    await user.type(screen.getByLabelText(/last name/i), 'Doe')
+    await user.type(screen.getByLabelText(/email/i), 'john@example.com')
+    await user.type(screen.getByLabelText(/password/i), 'password123')
+    await user.type(screen.getByLabelText(/confirm password/i), 'password123')
+    await user.click(screen.getByRole('button', { name: /create account/i }))
+
+    await waitFor(() => expect(signUp).toHaveBeenCalled())
+  })
+})
+      ]]>
+    </component_test_example>
+
+    <server_action_unit_example file="tests/lib/actions.test.ts">
+      <![CDATA[
+// tests/lib/actions.test.ts — Server action unit test (wrapper kept thin)
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
+import { signUp } from '@/lib/actions'
+
+vi.mock('@supabase/ssr')
+vi.mock('next/headers')
+
+const mockSupabaseClient = {
+  auth: { signUp: vi.fn() },
+  from: vi.fn(() => ({ select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis() }))
+}
+
+describe('signUp action', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(createServerClient).mockReturnValue(mockSupabaseClient as any)
+    vi.mocked(cookies).mockReturnValue({ getAll: vi.fn().mockReturnValue([]), set: vi.fn() } as any)
+  })
+
+  it('creates user successfully with valid data', async () => {
+    const fd = new FormData()
+    fd.append('firstName', 'John')
+    fd.append('lastName', 'Doe')
+    fd.append('email', 'john@example.com')
+    fd.append('password', 'password123')
+    fd.append('userType', 'patient')
+
+    mockSupabaseClient.auth.signUp.mockResolvedValue({ data: { user: { id: 'u-1' } }, error: null })
+
+    const res = await signUp(null, fd)
+    expect(mockSupabaseClient.auth.signUp).toHaveBeenCalled()
+    expect(res).toEqual({ success: true, message: 'User created successfully' })
+  })
+})
+      ]]>
+    </server_action_unit_example>
+
+    <memory_system_test file="tests/lib/memory-system.test.ts">
+      <![CDATA[
+// tests/lib/memory-system.test.ts — Example for a Node child_process integration
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { spawn } from 'child_process'
+import { saveTherapyMemoryTool } from '@/lib/memory-system'
+
+vi.mock('child_process')
+
+const mockSpawn = vi.mocked(spawn)
+
+describe('saveTherapyMemoryTool', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('invokes Python script and reports success', async () => {
+    const mockProc: any = {
+      on: (evt: string, cb: (code: number) => void) => { if (evt === 'close') setTimeout(() => cb(0), 5) },
+      stdout: { on: vi.fn() }, stderr: { on: vi.fn() }
+    }
+    mockSpawn.mockReturnValue(mockProc)
+
+    const res = await saveTherapyMemoryTool.invoke(
+      { information: 'User feels anxious about work' },
+      { configurable: { user_id: 'user-123' } }
+    )
+
+    // Avoid absolute paths; assert intent:
+    expect(mockSpawn).toHaveBeenCalledWith(
+      expect.stringMatching(/python/i),
+      expect.arrayContaining(['record', 'user-123', 'User feels anxious about work'])
+    )
+    expect(res).toContain('Memory saved successfully')
+  })
+})
+      ]]>
+    </memory_system_test>
+  </ts_examples>
+
+  <supabase_edge_functions>
+    <philosophy>
+      Supabase Edge Functions run in the Deno runtime and should be tested using Deno's test runner.
+      Prefer testing through <code>supabase.functions.invoke()</code> or direct HTTP where possible, focusing on validation, behavior, and error handling.
+    </philosophy>
+
+    <edge_function_test file="supabase/functions/tests/chat-function-test.ts">
+      <![CDATA[
+// supabase/functions/tests/chat-function-test.ts — Deno test for Edge Function
+import { assert, assertEquals } from 'jsr:@std/assert@1'
+import { createClient, SupabaseClient } from 'npm:@supabase/supabase-js@2'
+import 'jsr:@std/dotenv/load'
+
+const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
+const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+
+const options = { auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false } }
+
+Deno.test('Supabase client can query', async () => {
+  if (!supabaseUrl || !supabaseAnonKey) throw new Error('Missing SUPABASE_URL or SUPABASE_ANON_KEY')
+  const client: SupabaseClient = createClient(supabaseUrl, supabaseAnonKey, options)
+  const { data, error } = await client.from('therapists').select('*').limit(1)
+  assert(!error, error?.message)
+  assert(Array.isArray(data))
+})
+
+Deno.test('chat function returns a response for valid input', async () => {
+  const client: SupabaseClient = createClient(supabaseUrl, supabaseAnonKey, options)
+  const { data, error } = await client.functions.invoke('chat', {
+    body: { message: 'Hello, need help with anxiety', user_id: 'test-user-123' }
+  })
+  assert(!error, error?.message)
+  assert(typeof data?.response === 'string')
+})
+
+Deno.test('chat function handles invalid input', async () => {
+  const client: SupabaseClient = createClient(supabaseUrl, supabaseAnonKey, options)
+  const { data, error } = await client.functions.invoke('chat', { body: {} })
+  // Either an error or a structured error payload is acceptable—assert one of them:
+  assert(error || (data && 'error' in data))
+})
+      ]]>
+    </edge_function_test>
+
+    <edge_function_example file="supabase/functions/chat/index.ts">
+      <![CDATA[
+// supabase/functions/chat/index.ts — Example Edge Function
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { createClient } from 'npm:@supabase/supabase-js@2'
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+
+  try {
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+    )
+
+    const { message, user_id } = await req.json()
+    if (!message || !user_id) {
+      return new Response(JSON.stringify({ error: 'Message and user_id are required' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    const response = `I understand you said: "${message}". How can I help you further?`
+    return new Response(JSON.stringify({ response }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
+  } catch (err) {
+    console.error('Error in chat function:', err)
+    return new Response(JSON.stringify({ error: 'Internal server error' }), {
+      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
+  }
+})
+      ]]>
+    </edge_function_example>
+  </supabase_edge_functions>
+
+  <ci_github_actions file=".github/workflows/ci.yml">
+    <![CDATA[
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run TypeScript tests with coverage
+        run: npm test
+
+      - name: Upload coverage to Codecov
+        if: ${{ secrets.CODECOV_TOKEN != '' }}
+        uses: codecov/codecov-action@v3
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}   # required for private repos
+          files: ./coverage/lcov.info
+          flags: unittests
+          name: codecov-umbrella
+
+  test-edge-functions:
+    # Run Edge tests on PRs or when commit message explicitly requests it
+    if: contains(github.event.head_commit.message, '[test-edge]') || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.x
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start Supabase locally (requires Docker)
+        run: |
+          supabase start
+          echo "SUPABASE_URL=http://localhost:54321" >> $GITHUB_ENV
+          # This is the default local anon key from Supabase dev; OK for CI, do NOT use in prod
+          echo "SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0" >> $GITHUB_ENV
+
+      - name: Run Edge Function tests (Deno)
+        env:
+          SUPABASE_URL: ${{ env.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ env.SUPABASE_ANON_KEY }}
+        run: deno test --allow-all supabase/functions/tests/
+
+      - name: Stop Supabase
+        if: always()
+        run: supabase stop
+    ]]>
+  </ci_github_actions>
+
+  <advanced_topics>
+    <nextjs_testing>
+      Test App Router pages by rendering server components via Testing Library + <code>jsdom</code> (for client parts) and extracting pure logic. Use MSW for network mocking. Test middleware by creating <code>Request</code> objects and asserting <code>Response</code>/<code>Location</code>.
+    </nextjs_testing>
+    <fixtures_data>
+      Prefer factory functions + small JSON fixtures. For Supabase integration tests, use a separate test schema/project and clean aggressively. Use anon tokens to validate RLS; use service-role tokens only when intentionally bypassing RLS.
+    </fixtures_data>
+    <time_randomness>
+      Use <code>vi.useFakeTimers()</code> and seed RNG; pass PRNG/context explicitly when practical. Mock <code>Date.now()</code> for stable timestamps.
+    </time_randomness>
+    <parallelism>
+      Vitest runs tests in parallel; keep DB integration tests serial (or isolate with per-test schema). Edge tests run in separate Deno process.
+    </parallelism>
+    <flakiness>
+      Await all async work; avoid arbitrary sleeps—prefer readiness probes. Reset MSW/mocks between tests; release resources in <code>afterAll</code>.
+    </flakiness>
+  </advanced_topics>
+
+  <cursor_prompts>
+    <generate_ts_unit prompt="Generate a Vitest unit test">
+      Write a single-behavior Vitest test for <code>lib/&lt;module&gt;.ts</code>.
+      Use <code>describe/it/expect</code>, mock Supabase/HTTP at I/O boundaries, keep it deterministic.
+    </generate_ts_unit>
+    <generate_component_test prompt="Generate a React component test">
+      Create <code>tests/components/&lt;Component&gt;.test.tsx</code> using Testing Library.
+      Mock auth/router/Supabase, test interactions and async states; wire MSW as needed.
+    </generate_component_test>
+    <generate_api_test prompt="Generate an App Router route handler test">
+      Create <code>tests/api/&lt;route&gt;.test.ts</code>; import <code>GET/POST</code>, call with <code>new Request()</code>, assert <code>Response</code> status/body. Mock Supabase server client.
+    </generate_api_test>
+    <generate_edge_function_test prompt="Generate a Supabase Edge Function test (Deno)">
+      Create <code>supabase/functions/tests/&lt;function&gt;-test.ts</code> using Deno.
+      Invoke via <code>supabase.functions.invoke</code>; validate success and error cases.
+    </generate_edge_function_test>
+  </cursor_prompts>
+
+  <checklist>
+    <item>TS tests pass locally with coverage ≥ 80% on critical paths.</item>
+    <item>API tests call App Router handlers directly with <code>Request</code>/<code>Response</code>.</item>
+    <item>MSW is wired for network mocking; handlers reset per test.</item>
+    <item>Supabase integration tests use local Supabase and clean up test data.</item>
+    <item>Edge Function tests run via Deno in CI (Docker available).</item>
+    <item>Codecov only if token available (private repos).</item>
+  </checklist>
+
+  <guidelines>
+    <Do>
+    Prefer getByRole/findByRole with accessible names.
+    Test visible outcomes (text, ARIA state) and side-effects (mocked calls, navigation).
+    Use Zod for form schemas; unit-test schemas separately from the UI.
+    Keep component tests focused; heavy I/O goes behind a boundary (server action / MSW).
+    Use it.each for variant coverage without duplication.
+    Assert loading/pending states: button disabled during submit, spinners, “aria-busy”.
+    Add a11y checks where valuable (e.g., focus moves to the first error).
+    Is the test about UI state/validation? → Mock external stuff.
+    Is the test about multiple pieces working together? → Prefer MSW or a real local service.
+    Is this a top-3 user flow? → Add at least one integration/E2E test with the real thing.
+    </Do>
+    <Avoid>
+    Asserting against hidden or internal inputs (IDs, hidden fields).
+    Over-mocking the world; instead, mock at the boundary you own (server action).
+    Multiple expectations for different concerns in one test; split for clarity.
+    Declaring “100%” targets on everything; focus on risk-based coverage.
+    </Avoid>
+
+  <final_notes>
+    Keep the pyramid lean: pure logic (heavy), component/UI (focused), API handlers (thin), targeted integration with local Supabase, and optional Edge tests. Avoid global mocks that mask real behavior. Prefer pure functions for core rules; treat IO as a seam to mock.
+    Add EXTENSIVE DOCUMENTATION to the tests you write- It needs to be clear as day!
+  </final_notes>
+
+</mdc>

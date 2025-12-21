@@ -1,0 +1,9 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+# Your rule content
+
+[role-definition.mdc](mdc:app/rules/role-definition.mdc)
