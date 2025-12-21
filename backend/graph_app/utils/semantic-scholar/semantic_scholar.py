@@ -6,6 +6,7 @@ import json
 import os
 import asyncio
 import aiohttp
+import numpy as np
 from datetime import datetime
 from typing import List, Dict, Optional
 
@@ -16,7 +17,12 @@ def search_papers_sync(
     fields: Optional[List[str]] = None,
     max_retries: int = 3,
     sort_by_citations: bool = True,
-    save_to_json: bool = True
+    save_to_json: bool = True,
+    min_citation_count: Optional[int] = None,
+    publication_types: Optional[List[str]] = None,
+    year_range: Optional[str] = None,
+    open_access_only: bool = False,
+    include_embeddings: bool = False
 ) -> Dict:
     """
     Search for academic papers using Semantic Scholar API.
@@ -28,12 +34,17 @@ def search_papers_sync(
         max_retries: Number of times to retry on rate limit errors (default: 3)
         sort_by_citations: Sort results by citation count descending (default: True)
         save_to_json: Save results to JSON file in semantic-scholar folder (default: True)
+        min_citation_count: Minimum citation threshold (e.g., 10)
+        publication_types: Filter by types like ['Review', 'JournalArticle', 'Conference']
+        year_range: Year or year range (e.g., '2023' or '2020-2024')
+        open_access_only: Only return papers with public PDFs (default: False)
+        include_embeddings: Include specter_v2 embeddings for semantic similarity (default: False)
 
     Returns:
         Dictionary containing search results with 'total' count and 'data' list of papers
 
     Example:
-        >>> results = search_papers('machine learning', limit=10)
+        >>> results = search_papers('machine learning', limit=10, min_citation_count=50)
         >>> print(f"Found {results['total']} papers")
         >>> for paper in results['data']:
         ...     print(paper['title'])
@@ -41,19 +52,39 @@ def search_papers_sync(
     if fields is None:
         fields = ['title', 'abstract', 'year', 'citationCount', 'authors', 'url', 'publicationDate']
 
+    # Add embeddings field if requested
+    if include_embeddings and 'embedding.specter_v2' not in fields:
+        fields.append('embedding.specter_v2')
+
     # Semantic Scholar API has a max limit of 100 per request
     if limit > 100:
         limit = 100
 
     for attempt in range(max_retries):
         try:
+            # Build params with optional filters
+            params = {
+                'query': query,
+                'limit': limit,
+                'fields': ','.join(fields)
+            }
+
+            # Add optional filters
+            if min_citation_count is not None:
+                params['minCitationCount'] = str(min_citation_count)
+
+            if publication_types:
+                params['publicationTypes'] = ','.join(publication_types)
+
+            if year_range:
+                params['year'] = year_range
+
+            if open_access_only:
+                params['openAccessPdf'] = ''  # Flag parameter
+
             response = requests.get(
                 'https://api.semanticscholar.org/graph/v1/paper/search',
-                params={
-                    'query': query,
-                    'limit': limit,
-                    'fields': ','.join(fields)
-                }
+                params=params
             )
 
             if response.status_code == 429:  # Rate limit
@@ -98,10 +129,18 @@ def search_papers(
     fields: Optional[List[str]] = None,
     max_retries: int = 3,
     sort_by_citations: bool = True,
-    save_to_json: bool = True
+    save_to_json: bool = True,
+    min_citation_count: Optional[int] = None,
+    publication_types: Optional[List[str]] = None,
+    year_range: Optional[str] = None,
+    open_access_only: bool = False,
+    include_embeddings: bool = False
 ) -> Dict:
     """Temporary wrapper for search_papers_sync. Will be removed in Phase 4."""
-    return search_papers_sync(query, limit, fields, max_retries, sort_by_citations, save_to_json)
+    return search_papers_sync(
+        query, limit, fields, max_retries, sort_by_citations, save_to_json,
+        min_citation_count, publication_types, year_range, open_access_only, include_embeddings
+    )
 
 
 async def search_papers_async(
@@ -110,7 +149,12 @@ async def search_papers_async(
     fields: Optional[List[str]] = None,
     max_retries: int = 3,
     sort_by_citations: bool = True,
-    save_to_json: bool = False  # Individual searches don't save, only final aggregation
+    save_to_json: bool = False,  # Individual searches don't save, only final aggregation
+    min_citation_count: Optional[int] = None,
+    publication_types: Optional[List[str]] = None,
+    year_range: Optional[str] = None,
+    open_access_only: bool = False,
+    include_embeddings: bool = False
 ) -> Dict:
     """
     Async version: Search for academic papers using Semantic Scholar API.
@@ -122,6 +166,11 @@ async def search_papers_async(
         max_retries: Number of times to retry on rate limit errors (default: 3)
         sort_by_citations: Sort results by citation count descending (default: True)
         save_to_json: Save results to JSON file (default: False for individual calls)
+        min_citation_count: Minimum citation threshold (e.g., 10)
+        publication_types: Filter by types like ['Review', 'JournalArticle', 'Conference']
+        year_range: Year or year range (e.g., '2023' or '2020-2024')
+        open_access_only: Only return papers with public PDFs (default: False)
+        include_embeddings: Include specter_v2 embeddings for semantic similarity (default: False)
 
     Returns:
         Dictionary containing search results with 'total' count and 'data' list of papers.
@@ -130,16 +179,35 @@ async def search_papers_async(
     if fields is None:
         fields = ['title', 'abstract', 'year', 'citationCount', 'authors', 'url', 'publicationDate']
 
+    # Add embeddings field if requested
+    if include_embeddings and 'embedding.specter_v2' not in fields:
+        fields.append('embedding.specter_v2')
+
     # Semantic Scholar API has a max limit of 100 per request
     if limit > 100:
         limit = 100
 
     url = 'https://api.semanticscholar.org/graph/v1/paper/search'
+
+    # Build params with optional filters
     params = {
         'query': query,
         'limit': limit,
         'fields': ','.join(fields)
     }
+
+    # Add optional filters
+    if min_citation_count is not None:
+        params['minCitationCount'] = str(min_citation_count)
+
+    if publication_types:
+        params['publicationTypes'] = ','.join(publication_types)
+
+    if year_range:
+        params['year'] = year_range
+
+    if open_access_only:
+        params['openAccessPdf'] = ''  # Flag parameter
 
     for attempt in range(max_retries):
         try:
@@ -447,6 +515,142 @@ def format_paper_results(results: Dict) -> str:
             output.append(f"   Abstract: {abstract}")
 
     return '\n'.join(output)
+
+
+def cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
+    """
+    Calculate cosine similarity between two embedding vectors.
+
+    Args:
+        vec1: First embedding vector
+        vec2: Second embedding vector
+
+    Returns:
+        Cosine similarity score between -1 and 1 (higher = more similar)
+    """
+    v1 = np.array(vec1)
+    v2 = np.array(vec2)
+
+    dot_product = np.dot(v1, v2)
+    norm_v1 = np.linalg.norm(v1)
+    norm_v2 = np.linalg.norm(v2)
+
+    if norm_v1 == 0 or norm_v2 == 0:
+        return 0.0
+
+    return float(dot_product / (norm_v1 * norm_v2))
+
+
+def find_similar_papers(
+    reference_paper: Dict,
+    candidate_papers: List[Dict],
+    top_k: int = 10,
+    similarity_threshold: float = 0.0
+) -> List[Dict]:
+    """
+    Find papers most similar to a reference paper using embedding similarity.
+
+    Args:
+        reference_paper: Paper with 'embedding' field containing specter_v2 vector
+        candidate_papers: List of papers to compare against
+        top_k: Number of top similar papers to return (default: 10)
+        similarity_threshold: Minimum similarity score to include (default: 0.0)
+
+    Returns:
+        List of papers sorted by similarity score (descending), with 'similarity_score' added
+
+    Example:
+        >>> results = search_papers_async("machine learning", include_embeddings=True)
+        >>> reference = results['data'][0]
+        >>> similar = find_similar_papers(reference, results['data'][1:], top_k=5)
+        >>> for paper in similar:
+        ...     print(f"{paper['title']}: {paper['similarity_score']:.3f}")
+    """
+    # Extract reference embedding
+    ref_embedding = reference_paper.get('embedding', {}).get('vector')
+    if not ref_embedding:
+        raise ValueError("Reference paper must have 'embedding.vector' field")
+
+    # Calculate similarities
+    scored_papers = []
+    for paper in candidate_papers:
+        paper_embedding = paper.get('embedding', {}).get('vector')
+        if not paper_embedding:
+            continue
+
+        similarity = cosine_similarity(ref_embedding, paper_embedding)
+
+        if similarity >= similarity_threshold:
+            paper_with_score = paper.copy()
+            paper_with_score['similarity_score'] = similarity
+            scored_papers.append(paper_with_score)
+
+    # Sort by similarity (descending) and return top k
+    scored_papers.sort(key=lambda x: x['similarity_score'], reverse=True)
+    return scored_papers[:top_k]
+
+
+def cluster_papers_by_similarity(
+    papers: List[Dict],
+    similarity_threshold: float = 0.7
+) -> List[List[Dict]]:
+    """
+    Group papers into clusters based on embedding similarity.
+
+    Args:
+        papers: List of papers with embeddings
+        similarity_threshold: Minimum similarity to be in same cluster (default: 0.7)
+
+    Returns:
+        List of paper clusters (each cluster is a list of similar papers)
+
+    Example:
+        >>> results = search_papers_async("AI research", limit=50, include_embeddings=True)
+        >>> clusters = cluster_papers_by_similarity(results['data'], similarity_threshold=0.75)
+        >>> print(f"Found {len(clusters)} research clusters")
+        >>> for i, cluster in enumerate(clusters, 1):
+        ...     print(f"Cluster {i}: {len(cluster)} papers")
+    """
+    if not papers:
+        return []
+
+    # Filter papers with embeddings (handle None values)
+    papers_with_embeddings = [
+        p for p in papers
+        if p is not None and p.get('embedding', {}).get('vector')
+    ]
+
+    if not papers_with_embeddings:
+        return []
+
+    clusters = []
+    remaining = papers_with_embeddings.copy()
+
+    while remaining:
+        # Start new cluster with first remaining paper
+        seed = remaining.pop(0)
+        cluster = [seed]
+        seed_embedding = seed['embedding']['vector']
+
+        # Find all papers similar to seed
+        i = 0
+        while i < len(remaining):
+            candidate = remaining[i]
+            candidate_embedding = candidate['embedding']['vector']
+
+            similarity = cosine_similarity(seed_embedding, candidate_embedding)
+
+            if similarity >= similarity_threshold:
+                cluster.append(candidate)
+                remaining.pop(i)
+            else:
+                i += 1
+
+        clusters.append(cluster)
+
+    # Sort clusters by size (descending)
+    clusters.sort(key=len, reverse=True)
+    return clusters
 
 
 if __name__ == "__main__":

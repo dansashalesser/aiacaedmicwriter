@@ -60,17 +60,55 @@ async def semantic_scholar_node(state: GraphState) -> GraphState:
         papers_per_topic = state.get("papers_per_topic", 5)
         papers_for_original_query = state.get("papers_for_original_query", 10)
 
+        # Get filtering parameters from state
+        min_citation_count = state.get("min_citation_count")
+        publication_types = state.get("publication_types")
+        year_range = state.get("year_range")
+        open_access_only = state.get("open_access_only", False)
+        include_embeddings = state.get("include_embeddings", False)
+
         print(f"\n🔍 Searching Semantic Scholar:")
         print(f"   • Original query: {user_input[:80]}{'...' if len(user_input) > 80 else ''} ({papers_for_original_query} papers)")
         print(f"   • Individual topics ({len(topics)}): {papers_per_topic} papers each")
         for i, topic in enumerate(topics, 1):
             print(f"      {i}. {topic}")
 
+        # Show active filters
+        filters = []
+        if min_citation_count:
+            filters.append(f"min citations: {min_citation_count}")
+        if publication_types:
+            filters.append(f"types: {', '.join(publication_types)}")
+        if year_range:
+            filters.append(f"years: {year_range}")
+        if open_access_only:
+            filters.append("open access only")
+        if include_embeddings:
+            filters.append("with embeddings")
+        if filters:
+            print(f"   • Filters: {', '.join(filters)}")
+
         # Create parallel search tasks: original query + all topics
         search_tasks = [
-            search_papers_async(user_input, limit=papers_for_original_query)  # Original query first
+            search_papers_async(
+                user_input,
+                limit=papers_for_original_query,
+                min_citation_count=min_citation_count,
+                publication_types=publication_types,
+                year_range=year_range,
+                open_access_only=open_access_only,
+                include_embeddings=include_embeddings
+            )  # Original query first
         ] + [
-            search_papers_async(topic, limit=papers_per_topic)
+            search_papers_async(
+                topic,
+                limit=papers_per_topic,
+                min_citation_count=min_citation_count,
+                publication_types=publication_types,
+                year_range=year_range,
+                open_access_only=open_access_only,
+                include_embeddings=include_embeddings
+            )
             for topic in topics
         ]
 
