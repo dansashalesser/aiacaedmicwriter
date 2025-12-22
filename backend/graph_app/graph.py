@@ -11,23 +11,25 @@ sys.path.insert(0, str(project_root))
 
 from langgraph.graph import StateGraph, END
 from backend.graph_app.utils.state import GraphState
-from backend.graph_app.utils.nodes import topic_segmenter_node, semantic_scholar_node
+from backend.graph_app.utils.nodes import topic_segmenter_node, semantic_scholar_node, knowledge_graph_node
 
 
 def create_graph():
-    """Create and return the graph with topic segmentation and multi-topic search."""
+    """Create and return the graph with topic segmentation, multi-topic search, and knowledge graph analysis."""
     workflow = StateGraph(GraphState)
 
     # Add nodes
     workflow.add_node("topic_segmenter", topic_segmenter_node)
-    workflow.add_node("semantic_scholar", semantic_scholar_node)  # Now async, handles multiple topics
+    workflow.add_node("semantic_scholar", semantic_scholar_node)  # Async, handles multiple topics
+    workflow.add_node("knowledge_graph_builder", knowledge_graph_node)  # Analyzes papers for gaps
 
     # Set entry point to topic segmenter
     workflow.set_entry_point("topic_segmenter")
 
-    # NEW flow: topic_segmenter → semantic_scholar → END
+    # Flow: topic_segmenter → semantic_scholar → knowledge_graph_builder → END
     workflow.add_edge("topic_segmenter", "semantic_scholar")
-    workflow.add_edge("semantic_scholar", END)
+    workflow.add_edge("semantic_scholar", "knowledge_graph_builder")
+    workflow.add_edge("knowledge_graph_builder", END)
 
     # Compile the graph
     graph = workflow.compile()
@@ -53,7 +55,17 @@ async def main():
         "papers": None,
         "paper_count": 0,
         "formatted_results": None,
-        "json_path": None
+        "json_path": None,
+        # Knowledge graph fields
+        "knowledge_graph": None,
+        "gap_analysis": None,
+        "graph_markdown_path": None,
+        # Filtering parameters (optional)
+        "min_citation_count": None,
+        "publication_types": None,
+        "year_range": None,
+        "open_access_only": False,
+        "include_embeddings": False
     }
 
     print("=" * 60)
@@ -69,7 +81,26 @@ async def main():
     print(f"\nOriginal Idea: {result['user_input']}")
     print(f"Topics Searched: {', '.join(result['topics'])}")
     print(f"Total Papers: {result['total_papers']}")
-    print(f"JSON saved to: {result['json_path']}")
+    print(f"Papers JSON: {result['json_path']}")
+
+    # Knowledge graph results
+    if result.get('graph_markdown_path'):
+        print(f"\n📊 Knowledge Graph Analysis:")
+        print(f"   Report: {result['graph_markdown_path']}")
+
+        # Show brief summary if available
+        if result.get('knowledge_graph', {}).get('summary'):
+            print(f"\n   Summary: {result['knowledge_graph']['summary']}")
+
+        # Show top recommendations if available
+        gap_analysis = result.get('gap_analysis', {})
+        if gap_analysis and gap_analysis.get('priority_recommendations'):
+            print(f"\n   Top Recommendations:")
+            for i, rec in enumerate(gap_analysis['priority_recommendations'][:3], 1):
+                print(f"   {i}. {rec[:100]}{'...' if len(rec) > 100 else ''}")
+    else:
+        print(f"\n⚠️  Knowledge graph analysis: {result.get('gap_analysis', {}).get('error', 'Failed')}")
+
     print("\n" + result['formatted_results'])
 
 
