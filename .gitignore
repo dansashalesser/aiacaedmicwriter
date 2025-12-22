@@ -44,3 +44,6 @@ Thumbs.db
 
 # Semantic Scholar Results
 backend/graph_app/utils/semantic-scholar/results/
+
+# Knowledge Graph Results
+backend/graph_app/agents/knowledge_graph_builder/results/

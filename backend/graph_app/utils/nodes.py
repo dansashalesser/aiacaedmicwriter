@@ -192,3 +192,99 @@ async def semantic_scholar_node(state: GraphState) -> GraphState:
             "formatted_results": "No topics to search",
             "json_path": None
         }
+
+
+async def knowledge_graph_node(state: GraphState) -> GraphState:
+    """
+    Build knowledge graph from semantic scholar results.
+    Analyzes papers to identify research gaps, contradictions, and connections.
+    """
+    print("\nBuilding Knowledge Graph...")
+
+    # Extract required state
+    papers_by_topic = state.get("papers_by_topic", {})
+    topics = state.get("topics", [])
+    user_input = state.get("user_input", state.get("query", ""))
+
+    # Validate we have data to analyze
+    if not papers_by_topic:
+        print("No papers available for analysis")
+        return {
+            **state,
+            "knowledge_graph": None,
+            "gap_analysis": {"error": "No papers available"},
+            "graph_markdown_path": None
+        }
+
+    if not topics:
+        print("No topics available for analysis")
+        return {
+            **state,
+            "knowledge_graph": None,
+            "gap_analysis": {"error": "No topics available"},
+            "graph_markdown_path": None
+        }
+
+    total_papers = sum(len(papers) for papers in papers_by_topic.values())
+    print(f"   • Analyzing {len(papers_by_topic)} clusters")
+    print(f"   • Total papers: {total_papers}")
+
+    try:
+        # Import agent functions
+        from backend.graph_app.agents.knowledge_graph_builder import (
+            build_knowledge_graph,
+            save_markdown_report
+        )
+
+        # Build knowledge graph with timeout
+        print("   • Running cluster analysis...")
+        graph_data = await asyncio.wait_for(
+            build_knowledge_graph(papers_by_topic, topics, user_input),
+            timeout=300.0  # 5 minute timeout for entire analysis
+        )
+
+        # Check if analysis failed
+        if "error" in graph_data:
+            print(f"   ✗ Analysis failed: {graph_data['error']}")
+            return {
+                **state,
+                "knowledge_graph": graph_data,
+                "gap_analysis": {"error": graph_data["error"]},
+                "graph_markdown_path": None
+            }
+
+        # Save markdown report
+        print("   • Generating markdown report...")
+        markdown_path = save_markdown_report(graph_data, user_input)
+
+        # Extract gap analysis for easy access
+        gap_analysis = graph_data.get("gap_analysis", {})
+
+        print(f"   ✓ Knowledge graph built successfully")
+        print(f"   ✓ Report saved: {markdown_path}")
+
+        return {
+            **state,
+            "knowledge_graph": graph_data,
+            "gap_analysis": gap_analysis,
+            "graph_markdown_path": markdown_path
+        }
+
+    except asyncio.TimeoutError:
+        print("   ✗ Timeout: Knowledge graph analysis took too long (>5 minutes)")
+        return {
+            **state,
+            "knowledge_graph": None,
+            "gap_analysis": {"error": "Analysis timeout"},
+            "graph_markdown_path": None
+        }
+    except Exception as e:
+        print(f"   ✗ Error in knowledge graph node: {e}")
+        import traceback
+        traceback.print_exc()
+        return {
+            **state,
+            "knowledge_graph": None,
+            "gap_analysis": {"error": str(e)},
+            "graph_markdown_path": None
+        }

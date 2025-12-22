@@ -32,3 +32,8 @@ class GraphState(TypedDict):
     paper_count: int  # Number of papers retrieved
     formatted_results: Optional[str]  # Formatted text response
     json_path: Optional[str]  # Path to saved JSON file
+
+    # NEW: Knowledge graph analysis
+    knowledge_graph: Optional[Dict]  # Full knowledge graph analysis output
+    gap_analysis: Optional[Dict]  # Research gaps and untried directions
+    graph_markdown_path: Optional[str]  # Path to saved markdown report
