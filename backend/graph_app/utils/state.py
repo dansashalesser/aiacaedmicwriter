@@ -37,3 +37,8 @@ class GraphState(TypedDict):
     knowledge_graph: Optional[Dict]  # Full knowledge graph analysis output
     gap_analysis: Optional[Dict]  # Research gaps and untried directions
     graph_markdown_path: Optional[str]  # Path to saved markdown report
+
+    # NEW: Paper proposal generation
+    num_paper_proposals: int  # Number of proposals to generate (default 5)
+    paper_proposals: Optional[Dict]  # Generated paper proposals
+    proposals_markdown_path: Optional[str]  # Path to proposals markdown

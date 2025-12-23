@@ -10,6 +10,14 @@ sys.path.insert(0, str(semantic_scholar_dir))
 
 from backend.graph_app.utils.state import GraphState
 from backend.graph_app.agents.topic_segmenter import segment_topics
+from backend.graph_app.agents.knowledge_graph_builder import (
+    build_knowledge_graph,
+    save_markdown_report
+)
+from backend.graph_app.agents.paper_proposal_generator import (
+    generate_paper_proposals,
+    save_proposals_markdown
+)
 from semantic_scholar import search_papers_async, save_categorized_results, format_categorized_results
 
 
@@ -230,12 +238,6 @@ async def knowledge_graph_node(state: GraphState) -> GraphState:
     print(f"   • Total papers: {total_papers}")
 
     try:
-        # Import agent functions
-        from backend.graph_app.agents.knowledge_graph_builder import (
-            build_knowledge_graph,
-            save_markdown_report
-        )
-
         # Build knowledge graph with timeout
         print("   • Running cluster analysis...")
         graph_data = await asyncio.wait_for(
@@ -288,3 +290,57 @@ async def knowledge_graph_node(state: GraphState) -> GraphState:
             "gap_analysis": {"error": str(e)},
             "graph_markdown_path": None
         }
+
+
+async def paper_proposal_node(state: GraphState) -> GraphState:
+    """
+    Generate detailed paper proposals based on gap analysis.
+
+    Each proposal triggers its own Semantic Scholar search for targeted literature.
+    """
+    print("\nGenerating Paper Proposals...")
+
+    # Extract required state
+    gap_analysis = state.get("gap_analysis", {})
+    knowledge_graph = state.get("knowledge_graph", {})
+    user_input = state.get("user_input", state.get("query", ""))
+    num_proposals = state.get("num_paper_proposals", 5)  # Configurable
+
+    # Validate we have gap analysis
+    if not gap_analysis or "error" in gap_analysis:
+        print("   No gap analysis available")
+        return {
+            **state,
+            "paper_proposals": None,
+            "proposals_markdown_path": None
+        }
+
+    cluster_analyses = knowledge_graph.get("cluster_analyses", [])
+
+    try:
+        print(f"   • Generating {num_proposals} paper proposals with fresh literature searches...")
+        proposals_data = await asyncio.wait_for(
+            generate_paper_proposals(gap_analysis, cluster_analyses, user_input, num_proposals),
+            timeout=300.0  # 5 minute timeout (includes Semantic Scholar searches)
+        )
+
+        print("   • Saving proposals to markdown...")
+        markdown_path = save_proposals_markdown(proposals_data, user_input)
+
+        print(f"   ✓ Generated {len(proposals_data['proposals'])} paper proposals")
+        print(f"   ✓ Saved to: {markdown_path}")
+
+        return {
+            **state,
+            "paper_proposals": proposals_data,
+            "proposals_markdown_path": markdown_path
+        }
+
+    except asyncio.TimeoutError:
+        print("   ✗ Timeout generating proposals")
+        return {**state, "paper_proposals": None, "proposals_markdown_path": None}
+    except Exception as e:
+        print(f"   ✗ Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return {**state, "paper_proposals": None, "proposals_markdown_path": None}
