@@ -1,7 +1,7 @@
 """Paper Proposal Generator - Generates detailed academic paper proposals from gap analysis."""
 
 from langchain_openai import ChatOpenAI
-from langchain.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
 import asyncio
@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 import re
 import sys
+from langfuse import observe
 
 # Add semantic-scholar folder to path for imports
 semantic_scholar_dir = Path(__file__).parent.parent.parent / "utils" / "semantic-scholar"
@@ -118,6 +119,7 @@ class PaperProposalsOutput(BaseModel):
 # Helper Functions
 # ==============================================================================
 
+@observe(name="sanitize-filename-proposals")
 def sanitize_filename(user_input: str) -> str:
     """Sanitize user input to create a valid filename."""
     sanitized = re.sub(r'[^a-zA-Z0-9_-]', '_', user_input[:50])
@@ -125,6 +127,7 @@ def sanitize_filename(user_input: str) -> str:
     return sanitized.strip('_')
 
 
+@observe(name="format-papers-for-literature")
 def format_papers_for_literature(papers: List[Dict]) -> str:
     """Format papers for LLM context."""
     if not papers:
@@ -155,6 +158,7 @@ Paper {i}:
     return "\n".join(formatted)
 
 
+@observe(name="generate-proposals-summary")
 def generate_proposals_summary(proposals: List[PaperProposal], gap_analysis: Dict) -> str:
     """Generate overview summary of all proposals."""
     titles = [proposal.working_title for proposal in proposals]
@@ -177,6 +181,7 @@ These proposals range from high-risk, high-impact theoretical contributions to s
 # Stage 1: Generate Proposal Concepts
 # ==============================================================================
 
+@observe(name="generate-proposal-concepts", as_type="generation")
 async def generate_proposal_concepts(
     gap_analysis: Dict[str, Any],
     user_input: str,
@@ -281,6 +286,7 @@ async def generate_proposal_concepts(
 # Stage 3: Generate Full Proposal
 # ==============================================================================
 
+@observe(name="generate-full-proposal", as_type="generation")
 async def generate_full_proposal(
     concept: ProposalConcept,
     papers: List[Dict],
@@ -563,6 +569,7 @@ async def generate_full_proposal(
 # Main Orchestration Function
 # ==============================================================================
 
+@observe(name="generate-paper-proposals")
 async def generate_paper_proposals(
     gap_analysis: Dict[str, Any],
     cluster_analyses: List[Dict],
@@ -710,6 +717,7 @@ async def generate_paper_proposals(
 # Markdown Report Generation
 # ==============================================================================
 
+@observe(name="save-proposals-markdown")
 def save_proposals_markdown(output: Dict, user_input: str) -> str:
     """Generate and save markdown report with paper proposals."""
     # Create results directory

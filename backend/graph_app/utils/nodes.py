@@ -8,6 +8,8 @@ from pathlib import Path
 semantic_scholar_dir = Path(__file__).parent / "semantic-scholar"
 sys.path.insert(0, str(semantic_scholar_dir))
 
+from langfuse import observe
+
 from backend.graph_app.utils.state import GraphState
 from backend.graph_app.agents.topic_segmenter import segment_topics
 from backend.graph_app.agents.knowledge_graph_builder import (
@@ -21,6 +23,7 @@ from backend.graph_app.agents.paper_proposal_generator import (
 from semantic_scholar import search_papers_async, save_categorized_results, format_categorized_results
 
 
+@observe(name="topic-segmenter-node")
 def topic_segmenter_node(state: GraphState) -> GraphState:
     """
     Entry node: Use LLM to segment user's paper idea into research topics.
@@ -54,6 +57,7 @@ def topic_segmenter_node(state: GraphState) -> GraphState:
     }
 
 
+@observe(name="semantic-scholar-node")
 async def semantic_scholar_node(state: GraphState) -> GraphState:
     """
     Search Semantic Scholar API for papers based on topics.
@@ -146,6 +150,13 @@ async def semantic_scholar_node(state: GraphState) -> GraphState:
                 failed_searches.append(search_query)
                 continue
 
+            # Ensure result is a dictionary
+            if not isinstance(result, dict):
+                print(f"   ✗ '{search_query[:50]}...': Invalid result type")
+                papers_by_topic[search_query] = []
+                failed_searches.append(search_query)
+                continue
+
             # Handle error results
             if 'error' in result:
                 print(f"   ✗ '{search_query[:50]}...': {result['error']}")
@@ -170,9 +181,9 @@ async def semantic_scholar_node(state: GraphState) -> GraphState:
 
         # Warning if all searches failed
         if len(failed_searches) == len(all_searches):
-            print("⚠️  WARNING: All searches failed!")
+            print("WARNING: All searches failed!")
         elif failed_searches:
-            print(f"⚠️  Partial failure: {len(failed_searches)}/{len(all_searches)} searches failed")
+            print(f"Partial failure: {len(failed_searches)}/{len(all_searches)} searches failed")
 
         # Save consolidated results to JSON (original query + topics)
         json_path = save_categorized_results(user_input, papers_by_topic, all_searches)
@@ -202,6 +213,7 @@ async def semantic_scholar_node(state: GraphState) -> GraphState:
         }
 
 
+@observe(name="knowledge-graph-node")
 async def knowledge_graph_node(state: GraphState) -> GraphState:
     """
     Build knowledge graph from semantic scholar results.
@@ -292,6 +304,7 @@ async def knowledge_graph_node(state: GraphState) -> GraphState:
         }
 
 
+@observe(name="paper-proposal-node")
 async def paper_proposal_node(state: GraphState) -> GraphState:
     """
     Generate detailed paper proposals based on gap analysis.

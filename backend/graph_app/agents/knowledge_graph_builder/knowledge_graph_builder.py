@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 import os
 from dotenv import load_dotenv
+from langfuse import observe
 
 # Load environment variables
 load_dotenv()
@@ -80,6 +81,7 @@ class KnowledgeGraphOutput(BaseModel):
 # Helper Functions
 # ==============================================================================
 
+@observe(name="calculate-citation-weight")
 def calculate_citation_weight(papers: List[Dict]) -> List[Dict]:
     """
     Normalize citation counts and add weight field to each paper.
@@ -101,6 +103,7 @@ def calculate_citation_weight(papers: List[Dict]) -> List[Dict]:
     return sorted(papers, key=lambda p: p.get('citation_weight', 0), reverse=True)
 
 
+@observe(name="filter-papers-with-abstracts")
 def filter_papers_with_abstracts(papers: List[Dict]) -> tuple[List[Dict], int]:
     """
     Filter papers that have abstracts.
@@ -111,6 +114,7 @@ def filter_papers_with_abstracts(papers: List[Dict]) -> tuple[List[Dict], int]:
     return papers_with_abstracts, excluded_count
 
 
+@observe(name="sanitize-filename")
 def sanitize_filename(user_input: str) -> str:
     """Sanitize user input to create a valid filename."""
     # Take first 50 chars, replace non-alphanumeric with underscore
@@ -121,6 +125,7 @@ def sanitize_filename(user_input: str) -> str:
     return sanitized.strip('_')
 
 
+@observe(name="format-papers-for-prompt")
 def format_papers_for_prompt(papers: List[Dict]) -> str:
     """Format papers for LLM prompt."""
     formatted = []
@@ -144,6 +149,7 @@ def format_papers_for_prompt(papers: List[Dict]) -> str:
 # Cluster Analysis
 # ==============================================================================
 
+@observe(name="analyze-cluster", as_type="generation")
 async def analyze_cluster(
     cluster_name: str,
     papers: List[Dict],
@@ -212,6 +218,10 @@ IMPORTANT: Set cluster_name to "{cluster_name}", paper_count to {len(papers)}, a
             timeout=60.0
         )
 
+        # Ensure result is ClusterAnalysis type
+        if isinstance(result, dict):
+            result = ClusterAnalysis(**result)
+
         print(f"✓ Analyzed cluster: {cluster_name} ({len(papers_with_abstracts)} papers)")
         return result
 
@@ -227,6 +237,7 @@ IMPORTANT: Set cluster_name to "{cluster_name}", paper_count to {len(papers)}, a
 # Gap Analysis Synthesis
 # ==============================================================================
 
+@observe(name="synthesize-gap-analysis", as_type="generation")
 async def synthesize_gap_analysis(
     cluster_analyses: List[ClusterAnalysis],
     user_input: str,
@@ -287,6 +298,10 @@ Focus on actionable, concrete research directions that build on existing work.""
             timeout=90.0
         )
 
+        # Ensure result is GapAnalysis type
+        if isinstance(result, dict):
+            result = GapAnalysis(**result)
+
         print(f"✓ Synthesized gap analysis across {len(cluster_analyses)} clusters")
         return result
 
@@ -302,6 +317,7 @@ Focus on actionable, concrete research directions that build on existing work.""
 # Main Knowledge Graph Builder
 # ==============================================================================
 
+@observe(name="build-knowledge-graph")
 async def build_knowledge_graph(
     papers_by_topic: Dict[str, List[Dict]],
     topics: List[str],
@@ -397,6 +413,7 @@ async def build_knowledge_graph(
 # Markdown Report Generation
 # ==============================================================================
 
+@observe(name="save-markdown-report")
 def save_markdown_report(output: Dict[str, Any], user_input: str) -> str:
     """
     Generate and save markdown report to results folder.

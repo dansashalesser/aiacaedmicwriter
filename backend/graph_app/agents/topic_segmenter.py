@@ -5,6 +5,7 @@ from typing import List
 from pydantic import BaseModel, Field, field_validator
 from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
+from langfuse import observe
 
 # Load environment variables
 load_dotenv()
@@ -51,6 +52,7 @@ Input: "Machine Learning"
 Output: ["machine learning"]"""
 
 
+@observe(name="segment-topics", as_type="generation")
 def segment_topics(user_input: str, max_topics: int = 5) -> List[str]:
     """
     Use LLM to segment a user's paper idea into research topics.
@@ -77,7 +79,11 @@ def segment_topics(user_input: str, max_topics: int = 5) -> List[str]:
         {"role": "user", "content": user_prompt}
     ])
 
-    topics = result.topics
+    # Handle both dict and Pydantic model responses
+    if isinstance(result, dict):
+        topics = result.get('topics', [])
+    else:
+        topics = result.topics
 
     # Respect max_topics limit
     if len(topics) > max_topics:
