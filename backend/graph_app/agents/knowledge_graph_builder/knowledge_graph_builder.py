@@ -81,6 +81,7 @@ class KnowledgeGraphOutput(BaseModel):
 # Helper Functions
 # ==============================================================================
 
+@observe(name="calculate-citation-weight")
 def calculate_citation_weight(papers: List[Dict]) -> List[Dict]:
     """
     Normalize citation counts and add weight field to each paper.
@@ -102,6 +103,7 @@ def calculate_citation_weight(papers: List[Dict]) -> List[Dict]:
     return sorted(papers, key=lambda p: p.get('citation_weight', 0), reverse=True)
 
 
+@observe(name="filter-papers-with-abstracts")
 def filter_papers_with_abstracts(papers: List[Dict]) -> tuple[List[Dict], int]:
     """
     Filter papers that have abstracts.
@@ -112,6 +114,7 @@ def filter_papers_with_abstracts(papers: List[Dict]) -> tuple[List[Dict], int]:
     return papers_with_abstracts, excluded_count
 
 
+@observe(name="sanitize-filename")
 def sanitize_filename(user_input: str) -> str:
     """Sanitize user input to create a valid filename."""
     # Take first 50 chars, replace non-alphanumeric with underscore
@@ -122,6 +125,7 @@ def sanitize_filename(user_input: str) -> str:
     return sanitized.strip('_')
 
 
+@observe(name="format-papers-for-prompt")
 def format_papers_for_prompt(papers: List[Dict]) -> str:
     """Format papers for LLM prompt."""
     formatted = []
@@ -409,6 +413,7 @@ async def build_knowledge_graph(
 # Markdown Report Generation
 # ==============================================================================
 
+@observe(name="save-markdown-report")
 def save_markdown_report(output: Dict[str, Any], user_input: str) -> str:
     """
     Generate and save markdown report to results folder.

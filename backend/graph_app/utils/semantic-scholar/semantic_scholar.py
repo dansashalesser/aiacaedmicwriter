@@ -298,6 +298,7 @@ async def search_papers_async(
     }
 
 
+@observe(name="save-results-to-json")
 def _save_results_to_json(query: str, results: Dict) -> str:
     """
     Save search results to JSON file with query name and timestamp.
@@ -335,6 +336,7 @@ def _save_results_to_json(query: str, results: Dict) -> str:
     return filepath
 
 
+@observe(name="save-categorized-results")
 def save_categorized_results(
     user_input: str,
     papers_by_topic: Dict[str, List[Dict]],
@@ -406,6 +408,7 @@ def save_categorized_results(
     return filepath
 
 
+@observe(name="format-paper")
 def _format_paper(output: List[str], index: int, paper: Dict) -> None:
     """Helper function to format a single paper."""
     output.append(f"\n{index}. {paper.get('title', 'No title')}")
@@ -430,7 +433,7 @@ def _format_paper(output: List[str], index: int, paper: Dict) -> None:
         abstract = paper['abstract'][:200] + "..." if len(paper['abstract']) > 200 else paper['abstract']
         output.append(f"   Abstract: {abstract}")
 
-
+@observe(name="format-categorized-results")
 def format_categorized_results(papers_by_topic: Dict[str, List[Dict]], user_input: str = None) -> str:
     """
     Format categorized papers for display.
@@ -494,6 +497,7 @@ def format_categorized_results(papers_by_topic: Dict[str, List[Dict]], user_inpu
     return '\n'.join(output)
 
 
+@observe(name="format-paper-results")
 def format_paper_results(results: Dict) -> str:
     """
     Format paper search results into a readable string.
@@ -534,6 +538,7 @@ def format_paper_results(results: Dict) -> str:
     return '\n'.join(output)
 
 
+@observe(name="cosine-similarity")
 def cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
     """
     Calculate cosine similarity between two embedding vectors.
@@ -558,6 +563,7 @@ def cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
     return float(dot_product / (norm_v1 * norm_v2))
 
 
+@observe(name="find-similar-papers")
 def find_similar_papers(
     reference_paper: Dict,
     candidate_papers: List[Dict],
@@ -607,6 +613,7 @@ def find_similar_papers(
     return scored_papers[:top_k]
 
 
+@observe(name="cluster-papers-by-similarity")
 def cluster_papers_by_similarity(
     papers: List[Dict],
     similarity_threshold: float = 0.7

@@ -304,6 +304,7 @@ async def knowledge_graph_node(state: GraphState) -> GraphState:
         }
 
 
+@observe(name="paper-proposal-node")
 async def paper_proposal_node(state: GraphState) -> GraphState:
     """
     Generate detailed paper proposals based on gap analysis.
