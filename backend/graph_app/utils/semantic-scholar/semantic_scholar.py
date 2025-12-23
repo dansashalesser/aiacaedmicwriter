@@ -9,6 +9,15 @@ import aiohttp
 import numpy as np
 from datetime import datetime
 from typing import List, Dict, Optional
+from dotenv import load_dotenv
+from langfuse import observe
+
+# Load environment variables from .env file
+load_dotenv()
+
+# API Key Configuration
+# Get API key from environment variable for security
+SEMANTIC_SCHOLAR_API_KEY = os.getenv('SEMANTIC_SCHOLAR_API_KEY', 'gcuRgUlONd5xSq15MUdKmaMDAJKKaHMd9HUicSJm')
 
 
 def search_papers_sync(
@@ -82,9 +91,13 @@ def search_papers_sync(
             if open_access_only:
                 params['openAccessPdf'] = ''  # Flag parameter
 
+            # Include API key in headers for higher rate limits
+            headers = {"x-api-key": SEMANTIC_SCHOLAR_API_KEY}
+
             response = requests.get(
                 'https://api.semanticscholar.org/graph/v1/paper/search',
-                params=params
+                params=params,
+                headers=headers
             )
 
             if response.status_code == 429:  # Rate limit
@@ -143,6 +156,7 @@ def search_papers(
     )
 
 
+@observe(name="semantic-scholar-api")
 async def search_papers_async(
     query: str,
     limit: int = 50,
@@ -209,10 +223,13 @@ async def search_papers_async(
     if open_access_only:
         params['openAccessPdf'] = ''  # Flag parameter
 
+    # Include API key in headers for higher rate limits
+    headers = {"x-api-key": SEMANTIC_SCHOLAR_API_KEY}
+
     for attempt in range(max_retries):
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(url, params=params) as response:
+                async with session.get(url, params=params, headers=headers) as response:
                     if response.status == 429:  # Rate limit
                         wait_time = (attempt + 1) * 2  # Exponential backoff: 2s, 4s, 6s
                         print(f"Rate limited on '{query}'. Waiting {wait_time}s...")

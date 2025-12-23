@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 import os
 from dotenv import load_dotenv
+from langfuse import observe
 
 # Load environment variables
 load_dotenv()
@@ -155,6 +156,7 @@ def format_papers_for_prompt(papers: List[Dict]) -> str:
 # Cluster Analysis
 # ==============================================================================
 
+@observe(name="analyze-cluster", as_type="generation")
 async def analyze_cluster(
     cluster_name: str,
     papers: List[Dict],
@@ -223,6 +225,10 @@ IMPORTANT: Set cluster_name to "{cluster_name}", paper_count to {len(papers)}, a
             timeout=60.0
         )
 
+        # Ensure result is ClusterAnalysis type
+        if isinstance(result, dict):
+            result = ClusterAnalysis(**result)
+
         print(f"✓ Analyzed cluster: {cluster_name} ({len(papers_with_abstracts)} papers)")
         return result
 
@@ -238,6 +244,7 @@ IMPORTANT: Set cluster_name to "{cluster_name}", paper_count to {len(papers)}, a
 # Gap Analysis Synthesis
 # ==============================================================================
 
+@observe(name="synthesize-gap-analysis", as_type="generation")
 async def synthesize_gap_analysis(
     cluster_analyses: List[ClusterAnalysis],
     user_input: str,
@@ -304,6 +311,10 @@ Focus on actionable, concrete research directions that build on existing work.""
             timeout=90.0
         )
 
+        # Ensure result is GapAnalysis type
+        if isinstance(result, dict):
+            result = GapAnalysis(**result)
+
         print(f"✓ Synthesized gap analysis across {len(cluster_analyses)} clusters")
         return result
 
@@ -319,6 +330,7 @@ Focus on actionable, concrete research directions that build on existing work.""
 # Main Knowledge Graph Builder
 # ==============================================================================
 
+@observe(name="build-knowledge-graph")
 async def build_knowledge_graph(
     papers_by_topic: Dict[str, List[Dict]],
     topics: List[str],

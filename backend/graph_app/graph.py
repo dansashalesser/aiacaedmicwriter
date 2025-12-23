@@ -9,6 +9,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+from langfuse import observe, get_client
 from langgraph.graph import StateGraph, END
 from backend.graph_app.utils.state import GraphState
 from backend.graph_app.utils.nodes import topic_segmenter_node, semantic_scholar_node, knowledge_graph_node
@@ -37,6 +38,7 @@ def create_graph():
     return graph
 
 
+@observe(name="academic-research-pipeline")
 async def main():
     """Main async function to run the graph."""
     # Create the graph
@@ -103,6 +105,10 @@ async def main():
 
     print("\n" + result['formatted_results'])
 
+    # Flush langfuse traces before exit
+    get_client().flush()
+
+    return result
 
 if __name__ == "__main__":
     import asyncio

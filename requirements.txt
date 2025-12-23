@@ -7,3 +7,4 @@ requests
 pydantic
 aiohttp>=3.9.0
 numpy>=1.24.0
+langfuse>=2.0.0
