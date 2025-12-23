@@ -62,21 +62,10 @@ class ClusterAnalysis(BaseModel):
     key_insights: str = Field(description="High-level summary of this cluster")
 
 
-class FeasibilityAnalysis(BaseModel):
-    """Feasibility assessment for a research direction."""
-    research_direction: str
-    required_datasets: List[str]
-    computational_resources: str
-    expertise_needed: List[str]
-    estimated_difficulty: str = Field(description="Difficulty: low, medium, high")
-    potential_impact: str = Field(description="Expected impact if pursued")
-
-
 class GapAnalysis(BaseModel):
     """Overall gap analysis across all clusters."""
     research_gaps: List[str] = Field(description="Specific gaps in current literature")
     untried_directions: List[str] = Field(description="Novel research directions not yet explored")
-    feasibility_assessments: List[FeasibilityAnalysis]
     priority_recommendations: List[str] = Field(description="Top 3-5 most promising directions")
 
 
@@ -285,16 +274,10 @@ Tasks:
 3. Highlight contradictions that need resolution
    - Prioritize significant contradictions with research implications
 
-4. Assess feasibility for each direction (provide 3-5 assessments):
-   - Required datasets (be specific: name datasets or describe what's needed)
-   - Computational resources (e.g., "GPU cluster for training", "Standard workstation")
-   - Domain expertise required (e.g., "NLP + Climate Science", "Deep Learning + Medicine")
-   - Difficulty level (low/medium/high)
-   - Potential impact if successful (be specific about the impact)
-
-5. Provide 3-5 priority recommendations ranked by impact and feasibility
+4. Provide 3-5 priority recommendations ranked by potential impact
    - Each recommendation should be concrete and actionable
    - Include rationale for why it's high priority
+   - Focus on directions that could lead to significant contributions
 
 Focus on actionable, concrete research directions that build on existing work."""
 
@@ -388,7 +371,6 @@ async def build_knowledge_graph(
         gap_analysis = GapAnalysis(
             research_gaps=["Gap analysis failed"],
             untried_directions=["Analysis incomplete"],
-            feasibility_assessments=[],
             priority_recommendations=["Re-run analysis"]
         )
 
@@ -564,29 +546,6 @@ def save_markdown_report(output: Dict[str, Any], user_input: str) -> str:
         for i, direction in enumerate(untried_directions, 1):
             md_lines.append(f"{i}. {direction}")
         md_lines.append("")
-
-    # Feasibility assessments
-    feasibility_assessments = gap_analysis.get("feasibility_assessments", [])
-    if feasibility_assessments:
-        md_lines.append("### Feasibility Assessments")
-        md_lines.append("")
-        for assessment in feasibility_assessments:
-            direction = assessment.get("research_direction", "")
-            difficulty = assessment.get("estimated_difficulty", "")
-            datasets = assessment.get("required_datasets", [])
-            compute = assessment.get("computational_resources", "")
-            expertise = assessment.get("expertise_needed", [])
-            impact = assessment.get("potential_impact", "")
-
-            md_lines.extend([
-                f"#### {direction}",
-                f"- **Difficulty**: {difficulty}",
-                f"- **Required Datasets**: {', '.join(datasets)}",
-                f"- **Computational Resources**: {compute}",
-                f"- **Expertise Needed**: {', '.join(expertise)}",
-                f"- **Potential Impact**: {impact}",
-                ""
-            ])
 
     # Priority recommendations
     priority_recommendations = gap_analysis.get("priority_recommendations", [])

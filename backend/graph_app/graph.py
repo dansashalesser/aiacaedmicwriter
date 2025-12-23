@@ -11,25 +11,27 @@ sys.path.insert(0, str(project_root))
 
 from langgraph.graph import StateGraph, END
 from backend.graph_app.utils.state import GraphState
-from backend.graph_app.utils.nodes import topic_segmenter_node, semantic_scholar_node, knowledge_graph_node
+from backend.graph_app.utils.nodes import topic_segmenter_node, semantic_scholar_node, knowledge_graph_node, paper_proposal_node
 
 
 def create_graph():
-    """Create and return the graph with topic segmentation, multi-topic search, and knowledge graph analysis."""
+    """Create and return the graph with topic segmentation, multi-topic search, knowledge graph analysis, and paper proposals."""
     workflow = StateGraph(GraphState)
 
     # Add nodes
     workflow.add_node("topic_segmenter", topic_segmenter_node)
     workflow.add_node("semantic_scholar", semantic_scholar_node)  # Async, handles multiple topics
     workflow.add_node("knowledge_graph_builder", knowledge_graph_node)  # Analyzes papers for gaps
+    workflow.add_node("paper_proposal_generator", paper_proposal_node)  # Generates paper proposals
 
     # Set entry point to topic segmenter
     workflow.set_entry_point("topic_segmenter")
 
-    # Flow: topic_segmenter → semantic_scholar → knowledge_graph_builder → END
+    # Flow: topic_segmenter → semantic_scholar → knowledge_graph_builder → paper_proposal_generator → END
     workflow.add_edge("topic_segmenter", "semantic_scholar")
     workflow.add_edge("semantic_scholar", "knowledge_graph_builder")
-    workflow.add_edge("knowledge_graph_builder", END)
+    workflow.add_edge("knowledge_graph_builder", "paper_proposal_generator")
+    workflow.add_edge("paper_proposal_generator", END)
 
     # Compile the graph
     graph = workflow.compile()
@@ -44,7 +46,7 @@ async def main():
 
     # Run the graph with initial state
     initial_state = {
-        "user_input": "LLM for environmental prediction",
+        "user_input": "Natural Disaster prediction using LLMs",
         "topics": None,
         "max_topics": 5,
         "papers_per_topic": 5,  # Papers per individual topic
@@ -60,6 +62,10 @@ async def main():
         "knowledge_graph": None,
         "gap_analysis": None,
         "graph_markdown_path": None,
+        # Paper proposal fields
+        "num_paper_proposals": 5,
+        "paper_proposals": None,
+        "proposals_markdown_path": None,
         # Filtering parameters (optional)
         "min_citation_count": None,
         "publication_types": None,
@@ -100,6 +106,20 @@ async def main():
                 print(f"   {i}. {rec[:100]}{'...' if len(rec) > 100 else ''}")
     else:
         print(f"\n⚠️  Knowledge graph analysis: {result.get('gap_analysis', {}).get('error', 'Failed')}")
+
+    # Paper proposal results
+    if result.get('proposals_markdown_path'):
+        print(f"\n📝 Paper Proposals:")
+        print(f"   Report: {result['proposals_markdown_path']}")
+
+        # Show proposal titles if available
+        if result.get('paper_proposals', {}).get('proposals'):
+            proposals = result['paper_proposals']['proposals']
+            print(f"\n   Generated {len(proposals)} proposals:")
+            for i, proposal in enumerate(proposals[:5], 1):
+                print(f"   {i}. {proposal.working_title}")
+    else:
+        print(f"\n⚠️  Paper proposals: {result.get('paper_proposals', 'Not generated')}")
 
     print("\n" + result['formatted_results'])
 
