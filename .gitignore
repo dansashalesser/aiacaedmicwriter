@@ -47,3 +47,6 @@ backend/graph_app/utils/semantic-scholar/results/
 
 # Knowledge Graph Results
 backend/graph_app/agents/knowledge_graph_builder/results/
+
+# Paper Proposal Results
+backend/graph_app/agents/paper_proposal_generator/results/
