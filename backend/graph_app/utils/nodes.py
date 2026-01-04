@@ -334,7 +334,7 @@ async def paper_proposal_node(state: GraphState) -> GraphState:
         print(f"   • Generating {num_proposals} paper proposals with fresh literature searches...")
         proposals_data = await asyncio.wait_for(
             generate_paper_proposals(gap_analysis, cluster_analyses, user_input, num_proposals),
-            timeout=600.0  # 10 minute timeout (includes validation retries and meta-retries)
+            timeout=900.0  # 15 minute timeout (allows time for all 5 proposals + journal searches)
         )
 
         print("   • Saving proposals to markdown...")
@@ -350,7 +350,8 @@ async def paper_proposal_node(state: GraphState) -> GraphState:
         }
 
     except asyncio.TimeoutError:
-        print("   ✗ Timeout generating proposals")
+        print("   ✗ Timeout generating proposals - but may have partial results")
+        # Note: Partial results are lost on timeout - this is a known limitation
         return {**state, "paper_proposals": None, "proposals_markdown_path": None}
     except Exception as e:
         print(f"   ✗ Error: {e}")
