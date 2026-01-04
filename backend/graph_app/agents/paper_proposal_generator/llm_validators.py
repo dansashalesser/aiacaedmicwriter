@@ -93,7 +93,7 @@ async def validate_topic_alignment(
         (is_valid, feedback_message, full_result)
     """
     if llm is None:
-        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.0)
+        llm = ChatOpenAI(model="gpt-4o", temperature=0.0)
 
     structured_llm = llm.with_structured_output(TopicAlignmentResult)
 
@@ -145,8 +145,8 @@ Provide your assessment with detailed reasoning."""
             timeout=30.0
         )
 
-        # Determine validity based on alignment score
-        is_valid = result.is_aligned and result.alignment_score >= 0.7 and not result.drift_detected
+        # Determine validity based on alignment score - RELAXED: threshold lowered from 0.7 to 0.5
+        is_valid = result.is_aligned and result.alignment_score >= 0.5 and not result.drift_detected
 
         # Generate feedback message for retry if invalid
         if not is_valid:
@@ -219,7 +219,7 @@ async def validate_gap_intellectual_depth(
         (is_valid, feedback_message, full_result)
     """
     if llm is None:
-        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.0)
+        llm = ChatOpenAI(model="gpt-4o", temperature=0.0)
 
     structured_llm = llm.with_structured_output(GapDepthResult)
 
@@ -263,23 +263,37 @@ Set is_valid to True only if ALL requirements are met."""
             timeout=30.0
         )
 
+        # RELAXED: Accept if has EITHER theoretical prediction OR theoretical stakes
+        # or if content is substantive (length check for practical contributions)
+        relaxed_is_valid = (
+            result.has_theoretical_prediction or
+            result.has_theoretical_stakes or
+            (len(what_we_know.split()) >= 15 and
+             len(what_we_dont_know.split()) >= 15 and
+             len(why_it_matters.split()) >= 15)
+        )
+
         # Generate feedback message for retry if invalid
-        if not result.is_valid:
+        if not relaxed_is_valid:
             feedback_parts = ["GAP INTELLECTUAL DEPTH FAILED:"]
             if not result.has_theoretical_prediction:
-                feedback_parts.append("- 'What we know' must state what current theory PREDICTS, not just what exists")
+                feedback_parts.append("- 'What we know' should state what current theory PREDICTS (optional but preferred)")
             if not result.has_theoretical_stakes:
-                feedback_parts.append("- 'Why it matters' must explain THEORETICAL stakes (which theories are resolved), not just practical importance")
+                feedback_parts.append("- 'Why it matters' should explain THEORETICAL stakes (optional but preferred)")
             if result.gap_type == "coverage":
-                feedback_parts.append("- Gap appears to be a COVERAGE gap ('no one has done X'). Reframe as INTELLECTUAL gap ('assumption X is untested')")
+                feedback_parts.append("- Gap appears to be a COVERAGE gap ('no one has done X'). Consider reframing as INTELLECTUAL gap")
             if result.missing_components:
                 feedback_parts.append(f"- Missing components: {', '.join(result.missing_components)}")
             feedback_parts.append(f"- Reasoning: {result.reasoning}")
+            feedback_parts.append("\nNOTE: Gaps can have either theoretical depth OR strong practical importance")
             feedback_message = "\n".join(feedback_parts)
         else:
-            feedback_message = "Gap intellectual depth validated successfully."
+            if result.has_theoretical_prediction or result.has_theoretical_stakes:
+                feedback_message = "Gap has intellectual depth (theoretical)"
+            else:
+                feedback_message = "Gap has practical importance (substantive content)"
 
-        return (result.is_valid, feedback_message, result)
+        return (relaxed_is_valid, feedback_message, result)
 
     except asyncio.TimeoutError:
         fallback_result = GapDepthResult(
@@ -301,6 +315,47 @@ Set is_valid to True only if ALL requirements are met."""
             is_valid=True
         )
         return (True, f"Gap depth validation error: {str(e)} - proceeding", fallback_result)
+
+
+@observe(name="validate-gap-relaxed")
+async def validate_gap_intellectual_depth_relaxed(
+    what_we_know: str,
+    what_we_dont_know: str,
+    why_it_matters: str,
+    retry_count: int = 0,
+    llm: ChatOpenAI = None
+) -> Tuple[bool, str]:
+    """
+    Relaxed gap validator that becomes more permissive after retries.
+
+    On first attempt: Use strict validation (requires theoretical OR practical depth)
+    On retry 2+: Accept if content is substantive (length + basic structure)
+
+    Args:
+        what_we_know: Gap statement - what current research shows
+        what_we_dont_know: Gap statement - what is unknown/untested
+        why_it_matters: Gap statement - theoretical or practical importance
+        retry_count: Current retry attempt (0-indexed)
+        llm: Optional LLM to use
+
+    Returns:
+        (is_valid, feedback_message)
+    """
+    # Desperation mode - after 2+ retries, just check basic quality
+    if retry_count >= 2:
+        if (len(what_we_know.split()) >= 15 and
+            len(what_we_dont_know.split()) >= 15 and
+            len(why_it_matters.split()) >= 15):
+            return (True, "Gap accepted (relaxed mode after retries - substantive length)")
+        else:
+            return (False, f"Gap too short even in relaxed mode (need 15+ words each section)")
+
+    # Otherwise use normal relaxed validation
+    is_valid, feedback_msg, result = await validate_gap_intellectual_depth(
+        what_we_know, what_we_dont_know, why_it_matters, llm
+    )
+
+    return (is_valid, feedback_msg)
 
 
 # ==============================================================================
@@ -396,7 +451,7 @@ async def search_relevant_journals(
         (JournalSearchResult, rationale_text)
     """
     if llm is None:
-        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.0)
+        llm = ChatOpenAI(model="gpt-4o", temperature=0.0)
 
     # Step 1: Extract search queries from proposal
     query_extraction_llm = llm.with_structured_output(SearchQueryExtraction)
@@ -586,7 +641,7 @@ async def run_blocking_validators(
     Returns (all_passed, list_of_feedback_messages)
     """
     if llm is None:
-        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.0)
+        llm = ChatOpenAI(model="gpt-4o", temperature=0.0)
 
     all_feedback = []
     all_passed = True

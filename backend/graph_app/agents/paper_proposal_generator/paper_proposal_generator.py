@@ -412,9 +412,9 @@ async def generate_proposal_concepts(
     <p>Return as a ProposalConcepts object with a list of concepts.</p?
     </output>""")
 
-    # Generate concepts using gpt-4o with structured output
+    # Generate concepts using gpt-5-mini with structured output
     # Temperature lowered from 0.8 to 0.3 for more focused, less vague concepts
-    llm = ChatOpenAI(model="gpt-4o", temperature=0.3)
+    llm = ChatOpenAI(model="gpt-5-mini", temperature=0.3)
     structured_llm = llm.with_structured_output(ProposalConcepts)
 
     chain = prompt | structured_llm
@@ -557,6 +557,28 @@ async def generate_full_proposal(
        ❌ "significantly improve", "enhance understanding", "provide insights", "advance the field"
        ❌ "real-time data", "novel approach", "comprehensive dataset" (without specifics)
        ❌ "due to the richness/complexity/importance" (without quantification)
+
+    7. **CRITICAL: THEORETICAL vs PRACTICAL GAPS** - Your gap statement MUST include ONE of:
+
+       **A) THEORETICAL STAKES (preferred)**:
+          - What we know: "Theory X predicts Y, supported by [Author, 2023] finding Z with effect size N."
+          - What we don't know: "However, Theory X assumes condition C, which is untested in context D."
+          - Why it matters: "Resolving this would determine whether Theory X or competing Theory W better explains phenomenon P, settling the [specific debate]."
+
+       **B) STRONG PRACTICAL IMPORTANCE (acceptable)**:
+          - What we know: "Current approach X achieves Y performance [Author, 2023] with MAE of N."
+          - What we don't know: "However, factor Z's impact is unmeasured in setting W across Q conditions."
+          - Why it matters: "Understanding this could improve outcomes by N% (from A to B), saving $M annually, affecting Q population of size R."
+
+       **EXAMPLES OF THEORETICAL STAKES THAT PASS VALIDATION**:
+       ✓ "This would resolve the debate between rational choice theory and behavioral economics regarding investor decision-making under uncertainty"
+       ✓ "This tests the core assumption in prospect theory that losses loom larger than gains, specifically in algorithmic trading contexts where emotional factors are minimized"
+       ✓ "This distinguishes whether feature importance is driven by informational efficiency (EMH) or behavioral biases (sentiment theory)"
+
+       **EXAMPLES THAT FAIL VALIDATION**:
+       ✗ "This would advance understanding of X" (too vague, no theoretical stakes)
+       ✗ "No one has studied X+Y together" (coverage gap, not intellectual gap)
+       ✗ "This would be useful for practitioners" (practical only without quantified magnitude)
        ✓ Instead: Be specific about what, how much, measured how, compared to what baseline
 
     **If you find yourself writing a sentence without numbers, citations, or specific details, STOP and revise it.**</p>
@@ -782,9 +804,9 @@ async def generate_full_proposal(
     </critical guidelines>
 """)
 
-    # Generate proposal using gpt-4o with structured output
+    # Generate proposal using gpt-5-mini with structured output
     # Temperature lowered from 0.7 to 0.2 for specificity and reduced vagueness
-    llm = ChatOpenAI(model="gpt-4o", temperature=0.2)
+    llm = ChatOpenAI(model="gpt-5-mini", temperature=0.2)
     structured_llm = llm.with_structured_output(PaperProposal)
 
     chain = prompt | structured_llm
