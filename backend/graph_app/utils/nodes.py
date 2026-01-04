@@ -334,7 +334,7 @@ async def paper_proposal_node(state: GraphState) -> GraphState:
         print(f"   • Generating {num_proposals} paper proposals with fresh literature searches...")
         proposals_data = await asyncio.wait_for(
             generate_paper_proposals(gap_analysis, cluster_analyses, user_input, num_proposals),
-            timeout=900.0  # 15 minute timeout (allows time for all 5 proposals + journal searches)
+            timeout=1200.0  # 20 minute timeout (allows time for all 5 proposals + journal searches + rate limiting)
         )
 
         print("   • Saving proposals to markdown...")
