@@ -60,14 +60,19 @@ class ClusterAnalysis(BaseModel):
     limitations: List[LimitationAnalysis]
     contradictions: List[ContradictionAnalysis]
     missing_comparisons: List[MissingComparison]
+    untested_assumptions: List[str] = Field(description="Assumptions papers make without testing", default_factory=list)
+    measurement_gaps: List[str] = Field(description="Concepts lacking proper operationalization", default_factory=list)
     key_insights: str = Field(description="High-level summary of this cluster")
 
 
 class GapAnalysis(BaseModel):
     """Overall gap analysis across all clusters."""
-    research_gaps: List[str] = Field(description="Specific gaps in current literature")
-    untried_directions: List[str] = Field(description="Novel research directions not yet explored")
-    priority_recommendations: List[str] = Field(description="Top 3-5 most promising directions")
+    intellectual_gaps: List[str] = Field(description="Untested assumptions and unresolved contradictions in the literature")
+    methodological_gaps: List[str] = Field(description="Measurement and design limitations that prevent answering key questions")
+    research_gaps: List[str] = Field(description="DEPRECATED: Use intellectual_gaps instead", default_factory=list)
+    untried_directions: List[str] = Field(description="DEPRECATED: Specific research directions", default_factory=list)
+    priority_recommendations: List[str] = Field(description="Top 3-5 most promising directions with rationale")
+    gap_quality_score: float = Field(description="Self-assessment of gap quality (0-1, where 1=intellectual, 0=coverage)", default=0.5)
 
 
 class KnowledgeGraphOutput(BaseModel):
@@ -206,7 +211,20 @@ Tasks:
    - Identify methods that should be compared but aren't
    - Explain why the comparison would be valuable
 
-5. Provide key insights summary for this cluster (2-3 sentences)
+5. Extract UNTESTED ASSUMPTIONS from papers
+   - What do authors ASSUME without empirical testing? (e.g., "assumes users process information rationally", "assumes linear relationship between X and Y")
+   - What SCOPE LIMITATIONS do they acknowledge? (e.g., "limited to coastal regions", "excludes rural populations")
+   - What DATA LIMITATIONS create inference gaps? (e.g., "lacks individual-level behavior data", "relies on self-reported measures")
+   - Be SPECIFIC: quote paper titles and mention the actual assumption
+   - If no clear assumptions found, return empty list
+
+6. Identify MEASUREMENT GAPS
+   - Which concepts lack proper operationalization? (e.g., "panic measured only via survey, not actual behavior")
+   - Which variables use poor proxies? (e.g., "evacuation intent used as proxy for evacuation action")
+   - Which constructs are mentioned but not measured? (e.g., "discusses 'trust' but never operationalizes it")
+   - If no measurement gaps found, return empty list
+
+7. Provide key insights summary for this cluster (2-3 sentences)
 
 Focus on concrete, actionable findings. Be specific and cite paper titles.
 
@@ -255,6 +273,8 @@ async def synthesize_gap_analysis(
                 f"**{cluster.cluster_name}** ({cluster.paper_count} papers)\n"
                 f"- Key methods: {', '.join([m.method for m in cluster.common_methods[:3]])}\n"
                 f"- Main limitations: {', '.join([l.limitation[:50] for l in cluster.limitations[:2]])}\n"
+                f"- Untested assumptions: {', '.join([a[:60] for a in cluster.untested_assumptions[:2]]) if cluster.untested_assumptions else 'None identified'}\n"
+                f"- Measurement gaps: {', '.join([m[:60] for m in cluster.measurement_gaps[:2]]) if cluster.measurement_gaps else 'None identified'}\n"
                 f"- Insights: {cluster.key_insights}\n"
             )
             cluster_summaries.append(summary)
@@ -265,7 +285,7 @@ async def synthesize_gap_analysis(
         structured_llm = llm.with_structured_output(GapAnalysis)
 
         # Gap synthesis prompt
-        prompt = f"""You are a research strategist identifying unexplored research opportunities.
+        prompt = f"""You are a research strategist identifying INTELLECTUAL GAPS in the literature.
 
 Cluster analyses provided:
 
@@ -273,24 +293,52 @@ Cluster analyses provided:
 
 Original research question: "{user_input}"
 
+**CRITICAL INSTRUCTIONS - READ CAREFULLY**:
+
+Your job is to identify INTELLECTUAL GAPS, not coverage gaps.
+
+❌ **DO NOT** suggest gaps like:
+- "No one has combined X and Y"
+- "Domain Z has not been studied with method M"
+- "There is limited research on [topic]"
+- "Few studies have explored [combination]"
+
+✅ **DO** identify gaps like:
+- "Existing models ASSUME X, but this assumption breaks down when Y occurs—no studies test whether..."
+- "Papers contradict each other on whether A causes B, suggesting we don't understand the boundary conditions..."
+- "Authors acknowledge limitation L but don't address it, leaving question Q unanswered..."
+- "Construct C is discussed but never properly operationalized, preventing measurement of..."
+
 Tasks:
-1. Identify specific research gaps not addressed in current literature
-   - Be concrete and actionable
-   - Focus on gaps that could lead to novel contributions
 
-2. Propose novel research directions combining insights from multiple clusters
-   - Think creatively about unexplored combinations
-   - Consider cross-cluster opportunities
+1. Identify INTELLECTUAL GAPS (3-5 gaps)
+   - What ASSUMPTIONS do papers make that remain untested?
+   - What CONTRADICTIONS exist that reveal theoretical uncertainty?
+   - What LIMITATIONS do authors acknowledge but not resolve?
+   - Each gap should explain: (a) what we think we know, (b) why that belief is questionable, (c) what understanding is missing
+   - **CRITICAL**: Every gap MUST include the word "assume", "assumption", "unclear", "untested", "contradict", or "don't know"
+   - **CRITICAL**: Include specific numbers and quantification where possible
 
-3. Highlight contradictions that need resolution
-   - Prioritize significant contradictions with research implications
+   Example format: "Current models assume [assumption with numbers]. However, [evidence of limitation with citation]. We don't understand [specific knowledge gap], which would distinguish between [theory A predicting X%] and [theory B predicting Y%]."
 
-4. Provide 3-5 priority recommendations ranked by potential impact
-   - Each recommendation should be concrete and actionable
-   - Include rationale for why it's high priority
-   - Focus on directions that could lead to significant contributions
+2. Identify METHODOLOGICAL GAPS (2-3 gaps)
+   - Which variables/constructs lack proper measurement approaches?
+   - Which causal mechanisms are discussed but never empirically tested?
+   - Which design choices lack justification or validation?
 
-Focus on actionable, concrete research directions that build on existing work."""
+   Example format: "[Construct] is measured using [proxy], but this fails to capture [aspect]. No studies validate whether [proxy] actually reflects [construct] in [context]."
+
+3. Self-assess gap quality (gap_quality_score: 0.0 to 1.0)
+   - Score each gap: Does it identify an UNTESTED ASSUMPTION/CONTRADICTION (score ~1.0) or just an UNSTUDIED COMBINATION (score ~0.0)?
+   - Return average score across all gaps
+   - If average < 0.6, revise gaps to be more intellectually substantive
+
+4. Provide 3-5 priority recommendations
+   - Each should address an intellectual or methodological gap identified above
+   - Include specific rationale: Why does this gap matter? What would resolving it change?
+   - Prioritize by: (a) theoretical importance, (b) feasibility, (c) potential impact
+
+Focus on what we DON'T UNDERSTAND, not what we HAVEN'T TRIED."""
 
         # Invoke LLM with timeout
         result = await asyncio.wait_for(
@@ -385,15 +433,17 @@ async def build_knowledge_graph(
     if gap_analysis is None:
         print("✗ Gap analysis synthesis failed")
         gap_analysis = GapAnalysis(
-            research_gaps=["Gap analysis failed"],
-            untried_directions=["Analysis incomplete"],
-            priority_recommendations=["Re-run analysis"]
+            intellectual_gaps=["Gap analysis failed"],
+            methodological_gaps=["Analysis incomplete"],
+            priority_recommendations=["Re-run analysis"],
+            gap_quality_score=0.0
         )
 
     # Stage 3: Generate executive summary
     print("\n[Stage 3] Generating executive summary...")
     summary = f"Analyzed {len(cluster_analyses)} research clusters covering {sum(c.paper_count for c in cluster_analyses)} papers. "
-    summary += f"Identified {len(gap_analysis.research_gaps)} research gaps and {len(gap_analysis.untried_directions)} untried directions. "
+    summary += f"Identified {len(gap_analysis.intellectual_gaps)} intellectual gaps and {len(gap_analysis.methodological_gaps)} methodological gaps. "
+    summary += f"Gap quality score: {gap_analysis.gap_quality_score:.2f}. "
     summary += f"Top priority: {gap_analysis.priority_recommendations[0] if gap_analysis.priority_recommendations else 'None'}"
 
     # Build output
@@ -429,10 +479,10 @@ def save_markdown_report(output: Dict[str, Any], user_input: str) -> str:
     results_dir = Path(__file__).parent / "results"
     results_dir.mkdir(exist_ok=True)
 
-    # Generate filename
+    # Generate filename with timestamp first for chronological ordering
     sanitized_query = sanitize_filename(user_input)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"{sanitized_query}_{timestamp}.md"
+    filename = f"{timestamp} - {sanitized_query}.md"
     filepath = results_dir / filename
 
     # Extract data
@@ -531,6 +581,22 @@ def save_markdown_report(output: Dict[str, Any], user_input: str) -> str:
                 md_lines.append(f"- {method_a} vs {method_b}: {reason}")
             md_lines.append("")
 
+        # Untested assumptions
+        untested_assumptions = cluster.get("untested_assumptions", [])
+        if untested_assumptions:
+            md_lines.append("#### Untested Assumptions")
+            for assumption in untested_assumptions:
+                md_lines.append(f"- {assumption}")
+            md_lines.append("")
+
+        # Measurement gaps
+        measurement_gaps = cluster.get("measurement_gaps", [])
+        if measurement_gaps:
+            md_lines.append("#### Measurement Gaps")
+            for gap in measurement_gaps:
+                md_lines.append(f"- {gap}")
+            md_lines.append("")
+
         # Key insights
         key_insights = cluster.get("key_insights", "")
         if key_insights:
@@ -545,23 +611,33 @@ def save_markdown_report(output: Dict[str, Any], user_input: str) -> str:
     # Gap analysis
     md_lines.extend([
         "## Gap Analysis",
+        "",
+        f"**Gap Quality Score:** {gap_analysis.get('gap_quality_score', 0.0):.2f}/1.0 (1.0 = intellectual gaps, 0.0 = coverage gaps)",
         ""
     ])
 
-    # Research gaps
-    research_gaps = gap_analysis.get("research_gaps", [])
-    if research_gaps:
-        md_lines.append("### Research Gaps")
-        for i, gap in enumerate(research_gaps, 1):
+    # Intellectual gaps
+    intellectual_gaps = gap_analysis.get("intellectual_gaps", [])
+    if intellectual_gaps:
+        md_lines.append("### Intellectual Gaps (Untested Assumptions & Contradictions)")
+        for i, gap in enumerate(intellectual_gaps, 1):
             md_lines.append(f"{i}. {gap}")
         md_lines.append("")
 
-    # Untried directions
-    untried_directions = gap_analysis.get("untried_directions", [])
-    if untried_directions:
-        md_lines.append("### Untried Directions")
-        for i, direction in enumerate(untried_directions, 1):
-            md_lines.append(f"{i}. {direction}")
+    # Methodological gaps
+    methodological_gaps = gap_analysis.get("methodological_gaps", [])
+    if methodological_gaps:
+        md_lines.append("### Methodological Gaps (Measurement & Design Limitations)")
+        for i, gap in enumerate(methodological_gaps, 1):
+            md_lines.append(f"{i}. {gap}")
+        md_lines.append("")
+
+    # Research gaps (deprecated but keep for backward compat)
+    research_gaps = gap_analysis.get("research_gaps", [])
+    if research_gaps:
+        md_lines.append("### Research Gaps (Deprecated)")
+        for i, gap in enumerate(research_gaps, 1):
+            md_lines.append(f"{i}. {gap}")
         md_lines.append("")
 
     # Priority recommendations
