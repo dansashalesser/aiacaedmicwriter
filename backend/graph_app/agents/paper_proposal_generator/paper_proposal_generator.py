@@ -856,9 +856,8 @@ async def generate_proposal_with_retry(
     Returns:
         (proposal, error_log) where proposal is None if all retries failed
     """
-    # Import LLM validators here to avoid circular imports
+    # Import journal search only (validators removed)
     from backend.graph_app.agents.paper_proposal_generator.llm_validators import (
-        run_blocking_validators,
         search_relevant_journals
     )
 
@@ -878,32 +877,8 @@ async def generate_proposal_with_retry(
                 validation_feedback=validation_feedback
             )
 
-            # Pydantic validation passed! Now run LLM-based blocking validators
-            print(f"      ✓ Pydantic validation passed, running LLM validators...")
-
-            llm_valid, llm_feedback = await run_blocking_validators(
-                user_input=user_input,
-                proposal_title=proposal.working_title,
-                proposal_research_question=proposal.research_question,
-                proposal_gap_what_we_know=proposal.gap_what_we_know,
-                proposal_gap_what_we_dont_know=proposal.gap_what_we_dont_know,
-                proposal_gap_why_it_matters=proposal.gap_why_it_matters,
-                proposal_hypothesis=proposal.hypothesis
-            )
-
-            if not llm_valid:
-                error_msg = "LLM validation failed:\n" + "\n".join(llm_feedback)
-                error_log.append(f"Attempt {attempt + 1}: {error_msg}")
-                print(f"      ✗ LLM validation failed: {error_msg[:150]}...")
-                validation_feedback = error_msg
-                if attempt < max_retries - 1:
-                    print(f"      → Retrying with LLM validation feedback...")
-                    continue
-                else:
-                    print(f"      ✗ Max retries reached, LLM validation failed")
-                    return (None, error_log)
-
-            print(f"      ✓ LLM validation passed on attempt {attempt + 1}")
+            # Pydantic validation passed! Skip LLM validators (removed for speed)
+            print(f"      ✓ Pydantic validation passed")
 
             # Check similarity to existing proposals
             if existing_proposals:
