@@ -139,8 +139,16 @@ async def main():
             paper_proposals = result.get('paper_proposals', {})
             proposals = paper_proposals.get('proposals', [])
             rejected = paper_proposals.get('rejected_proposals', [])
+            requested = result.get('num_paper_proposals', 5)
 
-            print(f"   ✓ Generated: {len(proposals)} valid proposals")
+            # Show generation status
+            if len(proposals) == requested:
+                print(f"   ✓ Generated: {len(proposals)}/{requested} valid proposals")
+            elif len(proposals) > 0:
+                print(f"   ⚠️  Partial success: {len(proposals)}/{requested} proposals generated")
+            else:
+                print(f"   ✗ No valid proposals generated (0/{requested})")
+
             if rejected:
                 print(f"   ⚠️  Rejected: {len(rejected)} proposals (failed validation)")
 
@@ -160,7 +168,7 @@ async def main():
                     if reject_info.get('errors'):
                         print(f"      Reason: {reject_info['errors'][0][:100]}...")
         else:
-            print(f"   ✗ Proposal generation failed or incomplete")
+            print(f"   ✗ Proposal generation failed completely (no proposals generated)")
 
         print("\n" + "=" * 80)
         print("📁 All results saved to markdown reports (see paths above)")

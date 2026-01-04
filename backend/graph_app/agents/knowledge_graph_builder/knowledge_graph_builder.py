@@ -479,10 +479,10 @@ def save_markdown_report(output: Dict[str, Any], user_input: str) -> str:
     results_dir = Path(__file__).parent / "results"
     results_dir.mkdir(exist_ok=True)
 
-    # Generate filename
+    # Generate filename with timestamp first for chronological ordering
     sanitized_query = sanitize_filename(user_input)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"{sanitized_query}_{timestamp}.md"
+    filename = f"{timestamp} - {sanitized_query}.md"
     filepath = results_dir / filename
 
     # Extract data

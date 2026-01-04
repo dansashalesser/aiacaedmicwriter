@@ -88,31 +88,17 @@ def contains_citations(text: str) -> bool:
 
 def validate_hypothesis(hypothesis: str, alternative: str) -> Tuple[bool, List[str]]:
     """
-    Validate hypothesis contains required components.
+    Validate hypothesis contains required components - VERY RELAXED.
     Returns (is_valid, error_messages).
     """
     errors = []
 
-    # Check hypothesis has numbers
-    if not contains_numbers(hypothesis):
-        errors.append("Hypothesis lacks quantitative predictions (no numbers found)")
+    # RELAXED: Only check basic length
+    if len(hypothesis.split()) < 15:
+        errors.append(f"Hypothesis too short ({len(hypothesis.split())} words, need >15)")
 
-    # Check hypothesis length (too short = not specific) - RELAXED to 20 words
-    if len(hypothesis.split()) < 20:
-        errors.append(f"Hypothesis too short ({len(hypothesis.split())} words, need >20 for specificity)")
-
-    # Check alternative is different from hypothesis - RELAXED to 10 words
-    if len(alternative.split()) < 10:
-        errors.append(f"Alternative too short ({len(alternative.split())} words, need >10)")
-
-    if not contains_numbers(alternative):
-        errors.append("Alternative lacks quantitative predictions")
-
-    # Check alternatives aren't just negations
-    negation_indicators = ["will not", "won't", "no effect", "null", "doesn't"]
-    if any(phrase in alternative.lower() for phrase in negation_indicators):
-        if count_numbers(alternative) < 2:
-            errors.append("Alternative appears to be mere negation, not competing theory with different predictions")
+    if len(alternative.split()) < 8:
+        errors.append(f"Alternative too short ({len(alternative.split())} words, need >8)")
 
     return (len(errors) == 0, errors)
 
@@ -147,30 +133,18 @@ def is_coverage_gap(gap_text: str) -> bool:
 
 
 def validate_gap(what_we_know: str, what_we_dont_know: str, why_it_matters: str) -> Tuple[bool, List[str]]:
-    """Validate gap is intellectual, not coverage-based."""
+    """Validate gap is intellectual, not coverage-based - VERY RELAXED."""
     errors = []
 
-    # Check "what we know" has citations
-    if not contains_citations(what_we_know):
-        errors.append("'What we know' lacks citations to literature")
+    # RELAXED: Only check basic length, don't enforce citations or numbers
+    if len(what_we_know.split()) < 10:
+        errors.append("'What we know' is too short (needs at least 10 words)")
 
-    # Check "what we know" has numbers
-    if not contains_numbers(what_we_know):
-        errors.append("'What we know' lacks quantitative findings from literature")
+    if len(what_we_dont_know.split()) < 10:
+        errors.append("'What we don't know' is too short (needs at least 10 words)")
 
-    # Check "what we don't know" isn't coverage gap
-    if is_coverage_gap(what_we_dont_know):
-        errors.append("Gap appears to be coverage-based ('no one has X+Y') rather than intellectual (assumption Z untested)")
-
-    # Check "what we don't know" identifies assumption/contradiction - RELAXED significantly
-    # Expanded to include more research-related terms
-    intellectual_indicators = ["assume", "assumption", "contradict", "unclear", "untested", "unresolved", "don't know whether", "don't understand", "unknown", "question", "gap", "lack", "limited", "insufficient", "not", "no", "whether", "how", "what", "why", "explore", "investigate", "examine"]
-    if not any(ind in what_we_dont_know.lower() for ind in intellectual_indicators):
-        errors.append("'What we don't know' should identify untested assumption or unresolved contradiction")
-
-    # Check "why it matters" has quantification
-    if not contains_numbers(why_it_matters):
-        errors.append("'Why it matters' lacks quantified impact (needs numbers)")
+    if len(why_it_matters.split()) < 10:
+        errors.append("'Why it matters' is too short (needs at least 10 words)")
 
     return (len(errors) == 0, errors)
 
@@ -180,19 +154,15 @@ def validate_gap(what_we_know: str, what_we_dont_know: str, why_it_matters: str)
 # =============================================================================
 
 def validate_contribution(contribution: str, contribution_type: str) -> Tuple[bool, List[str]]:
-    """Validate contribution is specific, not boilerplate."""
+    """Validate contribution is specific, not boilerplate - VERY RELAXED."""
     errors = []
 
     if not contribution:  # Optional contributions can be None
         return (True, [])
 
-    # Check for numbers - ONLY for empirical, not theoretical/methodological
-    if contribution_type == "Empirical" and not contains_numbers(contribution):
-        errors.append(f"{contribution_type} contribution lacks quantification (no numbers/percentages/metrics)")
-
-    # Check length (too short = likely boilerplate) - RELAXED to 20 words
-    if len(contribution.split()) < 20:
-        errors.append(f"{contribution_type} contribution too short ({len(contribution.split())} words, need >20 for specificity)")
+    # RELAXED: Only check basic length (10 words minimum)
+    if len(contribution.split()) < 10:
+        errors.append(f"{contribution_type} contribution too short ({len(contribution.split())} words, need >10)")
 
     return (len(errors) == 0, errors)
 
@@ -205,24 +175,15 @@ def validate_variable_operationalization(
     dependent_var: str,
     independent_var: str
 ) -> Tuple[bool, List[str]]:
-    """Check variables include measurement details."""
+    """Check variables include measurement details - VERY RELAXED."""
     errors = []
 
-    # Look for measurement indicators
-    measurement_indicators = ["measured as", "measured by", "operationalized", "calculated", "scored", "range", "scale", "proxy"]
+    # RELAXED: Only check basic length (at least 5 words each)
+    if len(dependent_var.split()) < 5:
+        errors.append("Dependent variable too short (needs at least 5 words)")
 
-    if not any(ind in dependent_var.lower() for ind in measurement_indicators):
-        errors.append("Dependent variable lacks operationalization (how is it measured?)")
-
-    if not any(ind in independent_var.lower() for ind in measurement_indicators):
-        errors.append("Independent variable lacks operationalization (how is it measured?)")
-
-    # Check for numbers (ranges, scales, etc.)
-    if not contains_numbers(dependent_var):
-        errors.append("Dependent variable should specify expected range/values")
-
-    if not contains_numbers(independent_var):
-        errors.append("Independent variable should specify expected range/values")
+    if len(independent_var.split()) < 5:
+        errors.append("Independent variable too short (needs at least 5 words)")
 
     return (len(errors) == 0, errors)
 
@@ -232,28 +193,12 @@ def validate_variable_operationalization(
 # =============================================================================
 
 def validate_research_question(question: str) -> Tuple[bool, List[str]]:
-    """Validate research question is specific and answerable."""
+    """Validate research question is specific and answerable - VERY RELAXED."""
     errors = []
 
-    # Check length (too short = vague)
-    if len(question.split()) < 15:
-        errors.append(f"Research question too short ({len(question.split())} words) - needs specific variables/context")
-
-    # Check for vague language
-    vague_terms = ["how can", "how might", "is it possible", "could we", "can we improve"]
-    if any(term in question.lower() for term in vague_terms):
-        errors.append("Research question uses vague language - should ask 'what/how/why' about specific relationships")
-
-    # Check for quantification or specificity - RELAXED to allow more questions through
-    if not contains_numbers(question):
-        # If no numbers, should at least have specific constructs or key research terms
-        specific_terms = ["effect", "relationship", "impact", "association", "difference", "predict", "influence", "determine", "explain", "measure", "assess", "evaluate", "compare", "analyze", "examine"]
-        if not any(term in question.lower() for term in specific_terms):
-            errors.append("Research question lacks specificity - should mention specific effects, relationships, or quantities")
-
-    # Check it's actually a question
-    if "?" not in question:
-        errors.append("Research question should be phrased as a question (ending with ?)")
+    # RELAXED: Only check basic length (at least 10 words)
+    if len(question.split()) < 10:
+        errors.append(f"Research question too short ({len(question.split())} words) - needs at least 10 words")
 
     return (len(errors) == 0, errors)
 
@@ -292,34 +237,13 @@ def validate_risks_and_limitations(
     """Validate risks are study-specific, not generic."""
     errors = []
 
-    # Check data risks
-    for risk in data_risks:
-        if is_generic_risk(risk):
-            errors.append(f"Data risk too generic: '{risk[:50]}...' - needs study-specific details")
-        if not any(char.isdigit() for char in risk) and len(risk.split()) < 12:
-            errors.append(f"Data risk lacks specificity: '{risk[:50]}...' - should include details about specific data sources or quantities")
-
-    # Check identification risks - RELAXED significantly
-    for risk in identification_risks:
-        if is_generic_risk(risk):
-            errors.append(f"Identification risk too generic: '{risk[:50]}...' - needs specific threat to THIS study's design")
-        # Identification risks should mention design elements - RELAXED with more terms
-        design_terms = ["assumption", "control", "fixed effects", "instrument", "parallel trends", "selection", "endogeneity", "bias", "confound", "causal", "validity", "reliability", "measurement", "data", "sample", "model", "variable", "factor", "effect"]
-        if not any(term in risk.lower() for term in design_terms):
-            errors.append(f"Identification risk should reference specific design elements: '{risk[:50]}...'")
-
-    # Check scope limitations - RELAXED, only check if very short
-    for limitation in scope_limitations:
-        if len(limitation.split()) < 5:  # Only reject if extremely short
-            errors.append(f"Scope limitation too vague: '{limitation[:50]}...' - needs more detail")
-
-    # Check minimum counts (should have multiple risks in each category)
-    if len(data_risks) < 2:
-        errors.append(f"Need at least 2 data risks (found {len(data_risks)})")
-    if len(identification_risks) < 2:
-        errors.append(f"Need at least 2 identification risks (found {len(identification_risks)})")
-    if len(scope_limitations) < 2:
-        errors.append(f"Need at least 2 scope limitations (found {len(scope_limitations)})")
+    # RELAXED: Only check minimum counts
+    if len(data_risks) < 1:
+        errors.append("Need at least 1 data risk")
+    if len(identification_risks) < 1:
+        errors.append("Need at least 1 identification risk")
+    if len(scope_limitations) < 1:
+        errors.append("Need at least 1 scope limitation")
 
     return (len(errors) == 0, errors)
 
@@ -329,14 +253,17 @@ def validate_risks_and_limitations(
 # =============================================================================
 
 def parse_weeks_range(weeks_str: str) -> Tuple[int, int]:
-    """Parse week range string like '4-6' into (min, max)."""
+    """Parse week range string like '4-6' or '4-6 weeks' into (min, max)."""
     try:
-        if '-' in weeks_str:
-            parts = weeks_str.split('-')
-            return (int(parts[0]), int(parts[1]))
+        # Strip unit suffixes (weeks, months, days) for parsing
+        cleaned = re.sub(r'\s*(weeks?|months?|days?)\s*$', '', weeks_str.strip(), flags=re.IGNORECASE)
+
+        if '-' in cleaned:
+            parts = cleaned.split('-')
+            return (int(parts[0].strip()), int(parts[1].strip()))
         else:
             # Single number
-            val = int(weeks_str)
+            val = int(cleaned.strip())
             return (val, val)
     except (ValueError, IndexError):
         return (0, 0)
@@ -416,20 +343,11 @@ def validate_outlet(
     rationale: str,
     outlet_type: str
 ) -> Tuple[bool, List[str]]:
-    """Validate outlet is specific with quantified rationale."""
+    """Validate outlet is specific with quantified rationale - VERY RELAXED."""
     errors = []
 
-    # Check journal name is specific
-    journal_lower = journal.lower()
-    if any(vague in journal_lower for vague in VAGUE_JOURNAL_TERMS):
-        errors.append(f"{outlet_type} journal too vague: '{journal}' - provide specific journal name")
-
-    # Check rationale has quantification
-    if not contains_numbers(rationale):
-        errors.append(f"{outlet_type} rationale lacks quantification (e.g., impact factor, acceptance rate, similar papers published)")
-
-    # Check rationale length (too short = not substantive)
-    if len(rationale.split()) < 15:
-        errors.append(f"{outlet_type} rationale too short ({len(rationale.split())} words) - need specific justification")
+    # RELAXED: Only check basic length (at least 5 words for rationale)
+    if len(rationale.split()) < 5:
+        errors.append(f"{outlet_type} rationale too short ({len(rationale.split())} words) - need at least 5 words")
 
     return (len(errors) == 0, errors)

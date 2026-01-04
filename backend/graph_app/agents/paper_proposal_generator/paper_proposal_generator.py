@@ -2,7 +2,7 @@
 
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_validator, field_validator
 from typing import List, Dict, Any, Optional, Tuple
 import asyncio
 from datetime import datetime
@@ -62,6 +62,7 @@ class ProposalConcepts(BaseModel):
 
 class PaperProposal(BaseModel):
     """Complete paper proposal with 12-section structure."""
+    model_config = {"validate_assignment": True}  # Allow mutation after creation for journal search
 
     # 1. Working Title
     working_title: str = Field(description="Specific, contribution-focused title")
@@ -116,12 +117,28 @@ class PaperProposal(BaseModel):
     scope_limitations: List[str] = Field(description="Generalizability constraints")
 
     # 12. Timeline
-    literature_design_weeks: str = Field(description="Weeks for lit review + design (e.g., '1-4')")
-    data_acquisition_weeks: str = Field(description="Weeks for data (e.g., '5-8')")
-    analysis_weeks: str = Field(description="Weeks for analysis (e.g., '9-14')")
-    writing_weeks: str = Field(description="Weeks for draft (e.g., '15-18')")
-    revision_weeks: str = Field(description="Weeks for revision (e.g., '19-22')")
+    literature_design_weeks: str = Field(description="Weeks for lit review + design (e.g., '4-6 weeks')")
+    data_acquisition_weeks: str = Field(description="Weeks for data (e.g., '6-8 weeks')")
+    analysis_weeks: str = Field(description="Weeks for analysis (e.g., '8-10 weeks')")
+    writing_weeks: str = Field(description="Weeks for draft (e.g., '6-8 weeks')")
+    revision_weeks: str = Field(description="Weeks for revision (e.g., '4-6 weeks')")
     total_weeks_estimate: int = Field(description="Total estimated weeks")
+
+    # Issue 8: Validate timeline fields include units
+    @field_validator('literature_design_weeks', 'data_acquisition_weeks', 'analysis_weeks', 'writing_weeks', 'revision_weeks')
+    @classmethod
+    def validate_timeline_has_units(cls, v: str, info) -> str:
+        """Ensure timeline fields include time units (weeks/months)."""
+        if not v:
+            return v
+        v_lower = v.lower()
+        # Check for unit presence
+        if not any(unit in v_lower for unit in ['week', 'month', 'day']):
+            # Auto-append 'weeks' if it looks like a number/range without unit
+            if re.match(r'^[\d\-\s]+$', v.strip()):
+                return f"{v.strip()} weeks"
+            raise ValueError(f"Timeline field '{info.field_name}' must include time unit (e.g., '4-6 weeks'), got: '{v}'")
+        return v
 
     @model_validator(mode='after')
     def validate_proposal_quality(self):
@@ -268,19 +285,48 @@ Paper {i}:
 def generate_proposals_summary(proposals: List[PaperProposal], gap_analysis: Dict) -> str:
     """Generate overview summary of all proposals."""
     titles = [proposal.working_title for proposal in proposals]
+    num_proposals = len(proposals)
 
-    summary = f"""This research agenda presents {len(proposals)} paper proposals addressing key gaps identified in the literature:
+    # Fix Issue 2: Use intellectual_gaps instead of deprecated research_gaps
+    # Also extract gaps from proposals themselves as fallback
+    intellectual_gaps = gap_analysis.get('intellectual_gaps', [])
+    methodological_gaps = gap_analysis.get('methodological_gaps', [])
+
+    # Combine gaps, preferring intellectual gaps
+    all_gaps = intellectual_gaps[:2] + methodological_gaps[:1] if intellectual_gaps else methodological_gaps[:3]
+
+    # If no gaps from gap_analysis, extract from proposals
+    if not all_gaps:
+        all_gaps = [p.gap_what_we_dont_know[:100] + "..." for p in proposals[:3]]
+
+    gaps_text = chr(10).join(['- ' + gap for gap in all_gaps]) if all_gaps else "- See individual proposals for specific gaps addressed"
+
+    # Fix Issue 7: Use singular/plural language based on actual count
+    if num_proposals == 1:
+        intro = "This research proposal addresses a key gap identified in the literature:"
+        papers_label = "Proposed Paper:"
+        outro = ""
+    elif num_proposals == 2:
+        intro = "These two research proposals address key gaps identified in the literature:"
+        papers_label = "Proposed Papers:"
+        outro = "These proposals offer complementary approaches to the research area."
+    else:
+        intro = f"This research agenda presents {num_proposals} paper proposals addressing key gaps identified in the literature:"
+        papers_label = "Proposed Papers:"
+        outro = "These proposals provide a balanced research portfolio across different risk levels and methodological approaches."
+
+    summary = f"""{intro}
 
 Key Gaps Addressed:
-{chr(10).join(['- ' + gap for gap in gap_analysis.get('research_gaps', [])[:3]])}
+{gaps_text}
 
-Proposed Papers:
+{papers_label}
 {chr(10).join([f"{i+1}. {title}" for i, title in enumerate(titles)])}
 
-These proposals range from high-risk, high-impact theoretical contributions to safer empirical extensions, providing a balanced research portfolio.
+{outro}
 """
 
-    return summary
+    return summary.strip()
 
 
 # ==============================================================================
@@ -768,7 +814,8 @@ async def generate_proposal_with_retry(
     gap_analysis: Dict[str, Any],
     cluster_analyses: List[Dict],
     existing_proposals: List[PaperProposal],
-    max_retries: int = 3,
+    user_input: str,  # Added for topic alignment validation
+    max_retries: int = 2,  # RELAXED: Reduced from 3 to 2 for faster generation
     similarity_threshold: float = 0.75
 ) -> Tuple[Optional[PaperProposal], List[str]]:
     """
@@ -780,12 +827,19 @@ async def generate_proposal_with_retry(
         gap_analysis: Gap analysis for context
         cluster_analyses: Cluster analyses for context
         existing_proposals: Already-accepted proposals to check similarity against
+        user_input: Original research topic from user (for topic alignment validation)
         max_retries: Maximum number of attempts (default 3)
         similarity_threshold: Cosine similarity threshold (default 0.75)
 
     Returns:
         (proposal, error_log) where proposal is None if all retries failed
     """
+    # Import LLM validators here to avoid circular imports
+    from backend.graph_app.agents.paper_proposal_generator.llm_validators import (
+        run_blocking_validators,
+        search_relevant_journals
+    )
+
     error_log = []
     validation_feedback = None  # No feedback on first attempt
 
@@ -802,8 +856,32 @@ async def generate_proposal_with_retry(
                 validation_feedback=validation_feedback
             )
 
-            # Validation passed! Now check similarity
-            print(f"      ✓ Validation passed on attempt {attempt + 1}")
+            # Pydantic validation passed! Now run LLM-based blocking validators
+            print(f"      ✓ Pydantic validation passed, running LLM validators...")
+
+            llm_valid, llm_feedback = await run_blocking_validators(
+                user_input=user_input,
+                proposal_title=proposal.working_title,
+                proposal_research_question=proposal.research_question,
+                proposal_gap_what_we_know=proposal.gap_what_we_know,
+                proposal_gap_what_we_dont_know=proposal.gap_what_we_dont_know,
+                proposal_gap_why_it_matters=proposal.gap_why_it_matters,
+                proposal_hypothesis=proposal.hypothesis
+            )
+
+            if not llm_valid:
+                error_msg = "LLM validation failed:\n" + "\n".join(llm_feedback)
+                error_log.append(f"Attempt {attempt + 1}: {error_msg}")
+                print(f"      ✗ LLM validation failed: {error_msg[:150]}...")
+                validation_feedback = error_msg
+                if attempt < max_retries - 1:
+                    print(f"      → Retrying with LLM validation feedback...")
+                    continue
+                else:
+                    print(f"      ✗ Max retries reached, LLM validation failed")
+                    return (None, error_log)
+
+            print(f"      ✓ LLM validation passed on attempt {attempt + 1}")
 
             # Check similarity to existing proposals
             if existing_proposals:
@@ -831,6 +909,35 @@ async def generate_proposal_with_retry(
 
             # Passed both validation and similarity checks!
             print(f"      ✓ Proposal accepted (distinct from existing proposals)")
+
+            # Issue 3: Search for real journals to replace potentially fabricated ones
+            print(f"      🔍 Searching for relevant academic journals...")
+            try:
+                journal_result, journal_rationale = await search_relevant_journals(
+                    proposal_title=proposal.working_title,
+                    proposal_research_question=proposal.research_question,
+                    proposal_methodology=f"{proposal.dataset}; {proposal.identification_strategy}",
+                    proposal_domain=user_input[:100]  # Use user input as domain hint
+                )
+
+                # Update proposal with search-verified journals
+                proposal.first_choice_journal = journal_result.primary_journal.journal_name
+                proposal.first_choice_rationale = (
+                    f"{journal_result.primary_journal.scope_match} "
+                    f"{journal_result.primary_journal.methodology_fit} "
+                    f"{journal_result.primary_journal.quality_indicator}"
+                )
+                proposal.backup_journal = journal_result.backup_journal.journal_name
+                proposal.backup_rationale = (
+                    f"{journal_result.backup_journal.scope_match} "
+                    f"{journal_result.backup_journal.quality_indicator}"
+                )
+
+                print(f"      ✓ Journals: {proposal.first_choice_journal} (primary), {proposal.backup_journal} (backup)")
+            except Exception as e:
+                # Journal search failed, keep original (potentially fabricated) journals
+                print(f"      ⚠️ Journal search failed: {e}, keeping original recommendations")
+
             return (proposal, error_log)
 
         except ValueError as e:
@@ -997,7 +1104,8 @@ async def generate_paper_proposals(
             gap_analysis,
             cluster_analyses,
             existing_proposals=proposals,  # Pass already-accepted proposals
-            max_retries=3,
+            user_input=user_input,  # For topic alignment validation
+            max_retries=2,  # RELAXED: Reduced from 3 to 2
             similarity_threshold=0.75
         )
 
@@ -1031,8 +1139,8 @@ async def generate_paper_proposals(
         # IMPROVEMENT #1: Progressive concept diversity (5 → 8 → 10)
         retry_num_proposals = num_proposals + (meta_retry_count * 3)  # 5→8→10 (for meta_retry 1,2)
 
-        # IMPROVEMENT #2: Progressive retry reduction (3 → 2 → 1)
-        retry_max_retries = 4 - meta_retry_count  # 3→2 for meta_retry 1,2
+        # IMPROVEMENT #2: Progressive retry reduction (2 → 1)
+        retry_max_retries = 3 - meta_retry_count  # 2→1 for meta_retry 1,2
 
         print(f"\n⚠️  META-RETRY {meta_retry_count}/{max_meta_retries}: 0 proposals generated.")
         print(f"   Strategy: Generate {retry_num_proposals} concepts (↑ diversity) with {retry_max_retries} retries each (↓ per-concept attempts)")
@@ -1045,21 +1153,76 @@ async def generate_paper_proposals(
 
         # Regenerate concepts with explicit instruction to avoid failures
         print(f"   • Regenerating {retry_num_proposals} NEW proposal concepts (learning from {len(rejected_proposals)} failures)...")
-        concepts_result = await generate_proposal_concepts(
+        concepts = await generate_proposal_concepts(
             gap_analysis,
             user_input,
             num_proposals=retry_num_proposals,  # PROGRESSIVE INCREASE
             failed_examples=failed_examples
         )
-        concepts = concepts_result.concepts
 
-        # Search literature for new concepts
+        # Search literature for new concepts (same multi-topic approach as Stage 2)
         print(f"\n🔍 META-RETRY: Searching literature for {len(concepts)} new concepts...")
         all_proposal_papers = []
         for i, concept in enumerate(concepts):
-            print(f"   • Concept {i+1}/{len(concepts)}: Searching for '{concept.search_query[:50]}'...")
-            papers = await search_papers_for_proposal(concept.search_query)
-            all_proposal_papers.append(papers)
+            print(f"   • Concept {i+1}/{len(concepts)}: Segmenting query into topics...")
+
+            # Segment the search query into topics
+            try:
+                topics = segment_topics(concept.search_query, max_topics=5)
+                print(f"     - Segmented into {len(topics)} topics")
+            except Exception as e:
+                print(f"     ⚠️  Topic segmentation failed: {e}, using single query")
+                topics = []
+
+            # Create parallel search tasks: original query + all topics
+            search_tasks = [
+                search_papers_async(
+                    concept.search_query,
+                    limit=10,
+                    min_citation_count=5,
+                    save_to_json=False,
+                    sort_by_citations=True
+                )
+            ] + [
+                search_papers_async(
+                    topic,
+                    limit=5,
+                    min_citation_count=5,
+                    save_to_json=False,
+                    sort_by_citations=True
+                )
+                for topic in topics
+            ]
+
+            # Execute searches in parallel
+            try:
+                results = await asyncio.wait_for(
+                    asyncio.gather(*search_tasks, return_exceptions=True),
+                    timeout=60.0
+                )
+            except asyncio.TimeoutError:
+                print(f"     ⚠️  Search timeout - using empty results")
+                results = [{'total': 0, 'data': [], 'error': 'Timeout'} for _ in search_tasks]
+
+            # Aggregate all papers from all searches (deduplicating by paperId)
+            seen_paper_ids = set()
+            aggregated_papers = []
+
+            for result in results:
+                if isinstance(result, Exception):
+                    continue
+                if 'error' in result:
+                    continue
+
+                papers = result.get('data', [])
+                for paper in papers:
+                    paper_id = paper.get('paperId')
+                    if paper_id and paper_id not in seen_paper_ids:
+                        seen_paper_ids.add(paper_id)
+                        aggregated_papers.append(paper)
+
+            print(f"     ✓ Found {len(aggregated_papers)} unique papers (across {len(search_tasks)} searches)")
+            all_proposal_papers.append(aggregated_papers)
 
         # Try generating proposals again
         print(f"\n📝 META-RETRY: Generating proposals from new concepts...")
@@ -1075,6 +1238,7 @@ async def generate_paper_proposals(
                 gap_analysis,
                 cluster_analyses,
                 existing_proposals=proposals,
+                user_input=user_input,  # For topic alignment validation
                 max_retries=retry_max_retries,  # PROGRESSIVE DECREASE
                 similarity_threshold=0.75
             )
@@ -1158,10 +1322,10 @@ def save_proposals_markdown(output: Dict, user_input: str) -> str:
     results_dir = Path(__file__).parent / "results"
     results_dir.mkdir(exist_ok=True)
 
-    # Generate filename
+    # Generate filename with timestamp first for chronological ordering
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     sanitized_query = sanitize_filename(user_input)
-    filename = f"{sanitized_query}_{timestamp}_proposals.md"
+    filename = f"{timestamp} - {sanitized_query}_proposals.md"
     filepath = results_dir / filename
 
     # Build markdown content
